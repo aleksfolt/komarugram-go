@@ -6,6 +6,8 @@ import (
 	"image"
 	"image/color"
 
+	"komarugram/internal/appwindow"
+
 	"gio-mw/token"
 	"gioui.org/layout"
 )
@@ -37,11 +39,12 @@ func fillWindowSurface(gtx layout.Context, fill token.MatColor, size image.Point
 func (a *App) updateWindowEffects() {
 	prefs := a.preferences.Global()
 	want := prefs.WindowBlur && prefs.WindowTransparency > 0
-	if a.windowEffectsSet && a.windowBlurWanted == want {
+	transparent := appwindow.WantsTransparent(prefs.WindowTransparency > 0)
+	if a.windowEffectsSet && a.windowBlurWanted == want && a.windowTransparentWanted == transparent {
 		return
 	}
-	a.windowEffectsSet, a.windowBlurWanted = true, want
-	a.window.SetEffects(true, want)
+	a.windowEffectsSet, a.windowBlurWanted, a.windowTransparentWanted = true, want, transparent
+	a.window.SetEffects(transparent, want)
 }
 
 // FrameFill implements appwindow.FrameFiller: the caption of the window's

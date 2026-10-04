@@ -45,7 +45,7 @@ type App struct {
 	window *appwindow.Window
 	store  model.Store
 
-	windowEffectsSet, windowBlurWanted bool
+	windowEffectsSet, windowBlurWanted, windowTransparentWanted bool
 
 	preferences *preferences.Store
 	// ownUsers are the users of the accounts signed in here, which Local
