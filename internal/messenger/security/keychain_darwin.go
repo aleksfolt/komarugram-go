@@ -8,6 +8,8 @@ package security
 #include <CoreFoundation/CoreFoundation.h>
 #include <stdlib.h>
 
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+
 #define KC_SERVICE "komarugram-go"
 
 static CFMutableDictionaryRef kcQuery(const char *account) {
@@ -26,7 +28,20 @@ static int kcAdd(const char *account, const unsigned char *data, int n) {
 	CFMutableDictionaryRef q = kcQuery(account);
 	CFDataRef value = CFDataCreate(NULL, data, n);
 	CFDictionarySetValue(q, kSecValueData, value);
+	// With no list of trusted applications any program of the user reads the
+	// item without asking. The keychain ties an item to the code signature of
+	// its creator by default, and a binary built here is signed anew by every
+	// build, so each start asked for the keychain's password.
+	SecAccessRef access = NULL;
+	CFStringRef label = CFStringCreateWithCString(NULL, KC_SERVICE, kCFStringEncodingUTF8);
+	if (SecAccessCreate(label, NULL, &access) == errSecSuccess) {
+		CFDictionarySetValue(q, kSecAttrAccess, access);
+	}
 	OSStatus st = SecItemAdd(q, NULL);
+	if (access != NULL) {
+		CFRelease(access);
+	}
+	CFRelease(label);
 	CFRelease(value);
 	CFRelease(q);
 	return (int)st;
@@ -102,8 +117,11 @@ import (
 // logged in. The sealed object is the secret wrapped by that key and by the
 // authorization, so the password is still needed to open it.
 //
-// The keychain ties an item to the code signature of the program which made
-// it: a rebuilt, unsigned binary is asked about once by the system.
+// The item is open to any program of the user, as the TPM's device is: the
+// key alone opens nothing without the master password and the sealed file,
+// and the keychain's own check, by the code signature of the creator, asks
+// for the keychain's password at every start of a binary signed anew by each
+// build.
 type keychainKey struct{}
 
 // defaultTPM is the hardware the security configuration is sealed by.
