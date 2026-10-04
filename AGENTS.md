@@ -121,10 +121,10 @@ modules are not in this repository, and the client fetches them
 - **Root causes, not workarounds.** Measure before and after; say what was
   verified and what was not.
 - **Live-test on the operating system you work on.** The project is
-  developed on Linux and Windows alike: keep code and tools portable (Go,
+  developed on Linux, Windows and macOS alike: keep code and tools portable (Go,
   not shell, for tools in `cmd`), and say which systems a change touches
-  and was not checked on, for someone who uses them. macOS builds but is
-  not supported yet.
+  and was not checked on, for someone who uses them. macOS is
+  supported as well.
 - **Memory is a feature.** The app must give memory back to the OS (hidden
   windows drop their GPU context, `malloc_trim` after a window closes). When
   RSS grows but the Go heap does not, look at the native side.
