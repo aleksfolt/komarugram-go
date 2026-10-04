@@ -20,6 +20,9 @@ func TestKeychainSealUnseal(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer k.Forget(public)
+	if !k.opensToAny(public) {
+		t.Fatal("the item is not open to any program: every start would ask for the keychain's password")
+	}
 	got, err := k.Unseal(public, private, []byte("auth"))
 	if err != nil || !bytes.Equal(got, secret) {
 		t.Fatalf("Unseal = %q, %v", got, err)
