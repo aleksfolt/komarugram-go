@@ -620,16 +620,21 @@ func (a *App) Theme(gtx layout.Context) *token.Theme {
 	if v := defaults.FontsVersion(); v != a.themeFonts {
 		a.themeFonts, a.darkTheme, a.lightTheme = v, nil, nil
 	}
+	theme := a.lightTheme
 	if a.dark() {
 		if a.darkTheme == nil {
 			a.darkTheme = defaults.NewTheme(gtx, schemes.SchemeBaselineDark())
 		}
-		return a.darkTheme
+		theme = a.darkTheme
+	} else {
+		if a.lightTheme == nil {
+			a.lightTheme = defaults.NewTheme(gtx, schemes.SchemeBaselineLight())
+		}
+		theme = a.lightTheme
 	}
-	if a.lightTheme == nil {
-		a.lightTheme = defaults.NewTheme(gtx, schemes.SchemeBaselineLight())
-	}
-	return a.lightTheme
+	a.window.SetFrameDark(a.dark())
+	a.window.SetFrameColor(theme.Scheme.Surface.Color.AsNRGBA())
+	return theme
 }
 
 // Update implements appwindow.Content.
