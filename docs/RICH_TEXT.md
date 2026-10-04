@@ -1,7 +1,9 @@
 # Rich text, Markdown and LaTeX
 
-Status: research notes, 2026-10-04. No application changes. They gather what
-Telegram sends, how Telegram Desktop shows it, what KomaruGram has, and a
+Status: implementation started, 2026-10-04. The first part of stage 0
+(code and quote blocks) is implemented; see "Implementation progress" below.
+The research notes gather what Telegram sends, how Telegram Desktop shows
+it, what KomaruGram has, and a
 measured comparison of the libraries the work needs: a Markdown parser
 (goldmark or cmark-gfm), a LaTeX renderer (MicroTeX, star-tex, go-latex or
 RaTeX) and a code highlighter. Choosing a library is the maintainer's
@@ -132,7 +134,8 @@ as the bot's message.
 
 ### Layer in gotd
 
-KomaruGram's gotd v0.161.0 is layer 228. It has `RichMessage`, `PageBlock`
+The research started with gotd v0.161.0 (layer 228); the repository has
+since upgraded to v0.162.0 (layer 229). The older version has `RichMessage`, `PageBlock`
 and `RichText`, but not these layer 229 constructors: `textButton`,
 `pageBlockButtonRow`, `pageBlockDocument`, the new `pageBlockBlockquote`
 (with `collapsed`), `pageButton` and `richButtonStyle`. gotd v0.162.0
@@ -199,17 +202,18 @@ The upgrade was tried in a scratch copy of the repository:
 - **Message entities.**
   - `tgstore/convert.go` turns them into `model.Entity`, and
     `model.TextRuns` splits the text into styled runs.
-  - `chatPage.richText` (`ui/history.go`) draws the runs as one flow
+  - `chatPage.richText` (`ui/history_text_blocks.go`) draws the runs as flows
     through `internal/messenger/styledtext`.
   - Done: bold, italic, underline and strike; spoiler with its reveal;
     links and `@mentions`; custom emoji; text selection.
-  - Only a font change: `code`/`pre` are monospace, without a block, and
-    the language is lost. A blockquote is grey italics, without its bar,
-    and `collapsed` is lost.
+  - Inline `code` is monospace. `pre` has a block, language header and
+    copy button. A blockquote has a bar; `collapsed` shows three visual
+    lines and can be expanded locally. Both retain nested inline styles,
+    source offsets and selection across blocks.
   - Dropped as `unsupported`, shown as plain text: hashtag, bot command,
     email, phone, cashtag, bank card, mention by ID, formatted date and the
     diff entities.
-- **No block layout.**
+- **Ordinary entity blocks only; no article layout yet.**
 - **`rich_message` is not read.**
 - **A `.md` file opens in the system's program** (`ui/attachments.go`).
 - **No Instant View, no Markdown parser, no math.** goldmark is in `go.sum`
@@ -1024,6 +1028,109 @@ large and needs a dynamic linker.
 Stages 0–1 need no new library and stop rich messages from showing as empty
 bubbles. The editor, sending, HTML export, translation and AI composing
 are not in this plan.
+
+## Implementation progress
+
+2026-10-04: the first part of stage 0 is implemented, without new dependencies.
+
+- `model.Entity` keeps `Language` and `Collapsed`; conversion, the cache's
+  JSON and content revisions preserve both. Already cached messages need
+  to be fetched again to acquire metadata the old converter discarded.
+- Ordinary `pre` entities draw as code blocks with a language header and
+  copy button; quote entities draw with a bar. Collapsed quotes show three
+  visual lines, with a local expand/collapse button. Code wraps at grapheme
+  boundaries. Syntax highlighting is still stage 4a.
+- Inline styles, links, spoilers and selection share the message's original
+  rune coordinates across blocks. Code copying respects protected messages
+  and unrevealed spoilers. Layout renderer revision is now 12.
+- Entity intervals are validated without integer overflow and cannot split
+  UTF-16 surrogate pairs. A sorted event sweep replaces the quadratic
+  scan; redundant styles merge without copying strings. On Linux amd64,
+  4,096 nested bold intervals over 8,192 characters took 71–73 ms and
+  3.87 MB allocated before, 2.85–3.00 ms and 1.42 MB after
+  (`BenchmarkTextRunsOverlapping`, three runs each). The old code produced
+  8,191 shaping runs; the new code produces one.
+- Narrow code renders exposed a pre-existing wrapping defect: the
+  untruncated shaping fallback consumed multiple visual lines as one
+  fragment. The iterator now stops at every visual line, preserving glyphs
+  and hit regions. Grapheme wrapping also uses the untruncated fallback
+  when no glyph fits (including a one-pixel viewport), preventing a loop
+  that consumed memory without advancing.
+  `TestLongCodeTokenWrapsOneLinePerFragment` reproduces the multi-line defect
+  using the bundled Go Mono font.
+- A second rendering regression restores the text color after bitmap
+  emoji before each vector glyph batch. Otherwise a trailing character
+  after a bitmap could be invisible. The render test injects a transparent
+  emoji bitmap and checks pixels in the following glyph; it fails without
+  the color reset.
+- Regression tests cover conversion/cache/revisions, malformed intervals,
+  excessive overlapping styles, selection across blocks, copy protection,
+  collapsed quote hit regions and link/spoiler coordinates. The metadata,
+  interval merging and line-limit regressions were checked with their
+  respective fixes temporarily removed. `FuzzTextRunsHostile` exercises
+  invalid Unicode and hostile ranges.
+- `TEXT_BLOCKS_PNG_DIR` / `TestRenderTextBlocks` draws narrow and wide
+  messages, collapsed and expanded, in light and dark themes. It is part
+  of `cmd/render-all`; the same example is at the end of demo histories.
+
+Remaining in stage 0: clickable hashtags, bot commands, email, phone,
+mention by ID and formatted dates. `rich_message` conversion, summaries,
+full article loading and the shared article engine remain stages 1–3;
+rich messages themselves can still appear empty. RaTeX, highlighting,
+Markdown and Instant View remain later stages.
+
+### Focused validation
+
+2026-10-04, Linux amd64 VM:
+
+- Focused model, styled-text, Telegram conversion/cache and UI interaction
+  tests pass, including UTF-16 ranges, protected/spoiler copying, selection
+  across blocks, one-pixel wrapping and collapsed-quote hit regions.
+- Linux builds pass with `nox11` (Wayland), `nowayland` (X11) and
+  `novulkan`. No live Wayland or Windows testing was performed.
+- Windows amd64 (`messenger` and `kitchen`) and arm64 (`messenger`)
+  cross-builds pass with `CGO_ENABLED=0` and
+  `-gcflags=github.com/gotd/td/tg=-l`. The generated Telegram package's
+  ordinary optimized compilation exceeded the earlier memory limit and
+  then sustained memory pressure at the higher limit; it was stopped.
+  Disabling inlining only for that dependency completed both architectures
+  under a 2.25 GiB hard memory limit, 512 MiB maximum swap, one CPU quota,
+  `GOMAXPROCS=1`, `GOMEMLIMIT=1792MiB` and `go build -p 1`. This flag is a
+  validation-only workaround for the VM, not a project build setting;
+  ordinary optimized Windows builds remain unverified.
+- The previous full run exposed intermittent failures in existing UI button
+  tests (`TestChatRowMenuPins`, `TestCallbackButton`); this change does
+  not claim a clean full-suite result. Another full run remains deferred;
+  no new batch renders were produced during the focused follow-up.
+- Before committing, a live Linux/X11 smoke check in `-demo -no-integrations`
+  confirmed the code header, the closing punctuation after emoji, and
+  quote expansion. The copy button's clipboard output exactly matched
+  the source, including indentation, newlines and emoji; it was pasted
+  into the demo composer and cleared without sending. Real-account rich
+  messages have not been checked yet; `@richtextdemobot` is the suggested
+  live fixture once stages 1–3 are ready.
+
+### Existing fork work to reuse
+
+Checked NaixROOT/komarugram-go at
+[`568aced`](https://github.com/NaixROOT/komarugram-go/commit/568aced)
+(2026-10-04), without merging its other features into this change:
+
+- [`d19c156`](https://github.com/NaixROOT/komarugram-go/commit/d19c1569e1526cf3fa11bb0295e9a435de6f9b31)
+  already implements bot inline keyboards below the bubble, with shared
+  surfaces and icons (`history_keyboard.go`). Reuse that change rather
+  than rebuilding bot buttons as part of rich text.
+- [`94bef04`](https://github.com/NaixROOT/komarugram-go/commit/94bef04907c6dec143da22e3de1eeb1a64b0abdf)
+  adds Telegram link parsing, opening chats/posts/sets/invites, and
+  `MessageEntityMentionName` conversion to `tg://user?id=…`. Its follow-ups
+  `da5443a` and `d55f51f` refine invitation and peer resolution. Integrate
+  that existing path before implementing the remaining stage-0 link
+  actions; mention-by-ID does not need a second implementation.
+
+The code/quote block changes deliberately leave these keyboard and link
+routing implementations independent. Empty lines in code already retain
+height; this was checked directly and included in the block-copy and
+collapsed-quote regression scenarios, without an additional production fix.
 
 ## Verified and not
 

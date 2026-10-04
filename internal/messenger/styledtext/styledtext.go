@@ -93,6 +93,9 @@ type TextStyle struct {
 	// The context and draw callback use fragment-local coordinates. Call draw
 	// inside a clip to reveal text without changing its shaping or wrapping.
 	Decorate func(layout.Context, Fragment, func())
+	// MaxLines limits the visible lines; zero means all. Hidden lines are
+	// neither drawn nor exposed to hit testing.
+	MaxLines int
 	// Clusters, when not nil, is reused as the storage of Fragment.Clusters.
 	// A text laid out every frame then allocates nothing per glyph; fragments
 	// from an earlier Layout with the same buffer are overwritten.
@@ -144,6 +147,7 @@ func (t TextStyle) iterateSpan(gtx layout.Context, maxWidth int, span SpanStyle,
 		WrapPolicy: t.WrapPolicy.textPolicy(),
 	}, shaped)
 	ti := textIterator{
+		color:    span.Color,
 		hidden:   span.Color.A == 0,
 		viewport: image.Rectangle{Max: gtx.Constraints.Max},
 		maxLines: 1,
@@ -227,10 +231,10 @@ func (t TextStyle) layoutSpan(gtx layout.Context, maxWidth int, span SpanStyle, 
 		if firstTruncatedRune == '\n' {
 			endedWithNewline = true
 			runesDisplayed++
-		} else if runesDisplayed == 0 && t.WrapPolicy == WrapWords {
-			// If we're only wrapping on word boundaries, we failed to display any runes whatsoever,
-			// and it wasn't due to a hard newline, we need to line-wrap without truncation to discover
-			// the word that doesn't fit on the line.
+		} else if runesDisplayed == 0 {
+			// Even grapheme wrapping needs an untruncated fallback when the
+			// viewport is narrower than one glyph. Otherwise a truncator-only
+			// line consumes nothing and Layout loops forever.
 			call, ti = t.iterateSpan(gtx, maxWidth, span, span.shaped, span.runes, false, clusters)
 			runesDisplayed = ti.runes
 			multiLine = runesDisplayed < span.runes
@@ -287,6 +291,7 @@ func (t TextStyle) Layout(gtx layout.Context, spanFn func(gtx layout.Context, id
 		overallSize    image.Point
 		lineShapes     []spanShape
 		lineStartIndex int
+		lines          int
 	)
 
 	for i := 0; i < len(spans); i++ {
@@ -381,6 +386,12 @@ func (t TextStyle) Layout(gtx layout.Context, spanFn func(gtx layout.Context, id
 			// reset line shaping data and update overall vertical dimensions
 			lineShapes = lineShapes[:0]
 			overallSize.Y += lineDims.Y
+			if lineDims.Y > 0 {
+				lines++
+				if t.MaxLines > 0 && lines >= t.MaxLines {
+					break
+				}
+			}
 			lineDims = image.Point{}
 			lineAscent = 0
 		}

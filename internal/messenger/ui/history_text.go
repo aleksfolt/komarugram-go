@@ -75,9 +75,7 @@ func (s spoilerReveal) radius(now time.Time, size image.Point) float32 {
 }
 
 type textInteraction struct {
-	fragments []styledtext.Fragment
-	// clusters backs fragments[i].Clusters and is reused by every layout.
-	clusters           []styledtext.Cluster
+	fragments          []styledtext.Fragment
 	size               image.Point
 	anchor, caret      int
 	pressed, dragged   bool
@@ -226,6 +224,10 @@ func (p *chatPage) textEvents(gtx layout.Context, r *messageRow, animate bool) {
 }
 
 func (r *messageRow) selectedText() string {
+	if r.noCopy {
+		return ""
+	}
+
 	lo, hi := min(r.text.anchor, r.text.caret), max(r.text.anchor, r.text.caret)
 	var result strings.Builder
 	offset := 0

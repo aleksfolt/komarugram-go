@@ -110,8 +110,10 @@ func convertMessage(account string, m tg.MessageClass, names map[int64]string) (
 				entity.Kind = "code"
 			case *tg.MessageEntityPre:
 				entity.Kind = "pre"
+				entity.Language = e.Language
 			case *tg.MessageEntityBlockquote:
 				entity.Kind = "quote"
+				entity.Collapsed = e.Collapsed
 			case *tg.MessageEntitySpoiler:
 				entity.Kind = "spoiler"
 			case *tg.MessageEntityURL:

@@ -214,7 +214,7 @@ func albumRow(r *messageRow, m model.Message) *messageRow {
 	}
 	child := r.album[m.Key.MessageID]
 	if child == nil || child.revision != m.ContentRevision {
-		child = &messageRow{revision: m.ContentRevision, runs: model.TextRuns(m.Text, m.Entities)}
+		child = &messageRow{revision: m.ContentRevision, runs: model.TextRuns(m.Text, m.Entities), noCopy: m.NoForwards}
 		r.album[m.Key.MessageID] = child
 	}
 	return child

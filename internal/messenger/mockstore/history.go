@@ -130,6 +130,8 @@ func (s *Store) History(chat int64) model.History {
 	spoiler := "Спойлер на нескольких строках: " + strings.Repeat("Нажмите здесь — текст откроется волной от места клика. ", 4)
 	add(spoiler, model.MessageText, nil, []model.Entity{{Kind: "spoiler", Offset: 0, Length: len(utf16.Encode([]rune(spoiler)))}}, nil)
 	add("Выделите часть этого текста и нажмите Ctrl/Cmd+C. Для выборки сообщений проведите по свободному месту рядом с пузырьками. Escape отменяет выделение.", model.MessageText, nil, nil, nil)
+	blocksText, blocksEntities := TextBlocksExample()
+	add(blocksText, model.MessageText, nil, blocksEntities, nil)
 	if s.isChannel(chat) {
 		// A channel's posts have no sender and a discussion: the last ones
 		// have comments, the others wait for the first one.

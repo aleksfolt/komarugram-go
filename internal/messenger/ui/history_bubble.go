@@ -149,7 +149,7 @@ func (p *chatPage) row(gtx layout.Context, m model.Message, date bool, join bubb
 		if p.activeText == r {
 			p.activeText = nil
 		}
-		r = &messageRow{revision: m.ContentRevision, runs: model.TextRuns(m.Text, m.Entities)}
+		r = &messageRow{revision: m.ContentRevision, runs: model.TextRuns(m.Text, m.Entities), noCopy: m.NoForwards}
 		for _, row := range m.Buttons {
 			r.buttons = append(r.buttons, make([]surface, len(row)))
 		}

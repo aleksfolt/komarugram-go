@@ -312,6 +312,8 @@ type Entity struct {
 	Offset, Length int
 	URL            string
 	DocumentID     int64
+	Language       string `json:",omitempty"`
+	Collapsed      bool   `json:",omitempty"`
 }
 
 // MessageButton is a button of a bot's keyboard, under a message or in a

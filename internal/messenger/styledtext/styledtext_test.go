@@ -107,3 +107,40 @@ func TestLinePrefixWrapsAsWholeSpan(t *testing.T) {
 		}
 	}
 }
+
+// Collapsed quotes must stop both drawing and hit testing at three visual
+// lines, including when a line contains several styles or wraps a long span.
+func TestMaxLinesStopsBeforeHiddenContent(t *testing.T) {
+	shaper := text.NewShaper(text.NoSystemFonts(), text.WithCollection(gofont.Collection()))
+	for _, content := range []string{"one\ntwo\nthree\nHIDDEN", "one\n\ntwo\nHIDDEN", strings.Repeat("wrapped word ", 1000)} {
+		gtx := layout.Context{Ops: new(op.Ops), Constraints: layout.Constraints{Max: image.Pt(120, 10000)}, Metric: unit.Metric{PxPerDp: 1, PxPerSp: 1}}
+		style := Text(shaper, SpanStyle{Content: "bold ", Size: 14, Font: font.Font{Weight: font.Bold}}, SpanStyle{Content: content, Size: 14})
+		style.MaxLines = 3
+		lines := map[int]bool{}
+		end := 0
+		style.Decorate = func(_ layout.Context, f Fragment, draw func()) {
+			lines[f.Bounds.Min.Y] = true
+			for _, c := range f.Clusters {
+				end = max(end, c.End)
+			}
+			draw()
+		}
+		style.Layout(gtx, nil)
+		if len(lines) != 3 || end >= len([]rune("bold "+content)) {
+			t.Fatalf("hidden content exposed: %d lines, %d runes", len(lines), end)
+		}
+	}
+}
+
+func TestLongCodeTokenWrapsOneLinePerFragment(t *testing.T) {
+	shaper := text.NewShaper(text.NoSystemFonts(), text.WithCollection(gofont.Collection()))
+	code := "func greet() {\n    fmt.Println(\"Привет, мир! 👋\")\n}"
+	for width := 80; width <= 240; width += 10 {
+		fragments, _ := layoutFragments(t, shaper, nil, width, SpanStyle{Content: code, Size: 20, Font: font.Font{Typeface: "Go Mono"}})
+		for _, f := range fragments {
+			if f.Bounds.Dy() > 35 {
+				t.Fatalf("width %d: fragment spans multiple lines: %v", width, f.Bounds)
+			}
+		}
+	}
+}

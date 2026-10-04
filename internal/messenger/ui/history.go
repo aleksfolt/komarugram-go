@@ -27,7 +27,6 @@ import (
 	"gioui.org/f32"
 	"gioui.org/font"
 	"gioui.org/gesture"
-	"gioui.org/io/pointer"
 	"gioui.org/layout"
 	"gioui.org/op"
 	"gioui.org/op/clip"
@@ -45,6 +44,8 @@ type messageRow struct {
 	album       map[model.MessageID]*messageRow
 	revision    uint64
 	runs        []model.TextRun
+	textBlocks  []messageTextBlock
+	noCopy      bool
 	text        textInteraction
 	buttons     [][]surface
 	// reactions are the message's reaction chips, which choose or take
@@ -505,7 +506,7 @@ func (p *chatPage) layoutHistory(gtx layout.Context, c model.Chat, l localizatio
 	}
 	p.historyWidth = size.X
 	theme := uint32(sc.Surface.Color.AsNRGBA().R)<<16 | uint32(sc.Surface.Color.AsNRGBA().G)<<8 | uint32(sc.Surface.Color.AsNRGBA().B)
-	env := model.RenderEnvironment{WidthPx: size.X, ScaleMilli: int(gtx.Metric.PxPerDp * 1000), TextScaleMilli: int(gtx.Metric.PxPerSp * 1000), Locale: string(l.Language()), FontRevision: fonts.Revision(), ThemeRevision: theme, RendererRevision: 11}
+	env := model.RenderEnvironment{WidthPx: size.X, ScaleMilli: int(gtx.Metric.PxPerDp * 1000), TextScaleMilli: int(gtx.Metric.PxPerSp * 1000), Locale: string(l.Language()), FontRevision: fonts.Revision(), ThemeRevision: theme, RendererRevision: 12}
 	if p.trace != nil {
 		p.trace.History.Environment = fmt.Sprintf("width:%d dp:%d sp:%d locale:%s font:%d theme:%x renderer:%d", env.WidthPx, env.ScaleMilli, env.TextScaleMilli, env.Locale, env.FontRevision, env.ThemeRevision, env.RendererRevision)
 	}
@@ -826,15 +827,16 @@ type textRunes struct {
 	n        int
 }
 
-func (p *chatPage) richText(gtx layout.Context, r *messageRow, l localization.Catalog, animate bool) layout.Dimensions {
-	end := p.trace.Begin("history.rich-text")
-	defer end()
-	p.textEvents(gtx, r, animate)
+func (p *chatPage) textFlow(gtx layout.Context, r *messageRow, block *messageTextBlock, origin image.Point, animate bool) layout.Dimensions {
+	runs := r.runs[block.first:block.end]
+	fragmentStart := len(r.text.fragments)
 	theme := wdk.GetMaterialTheme(gtx)
 	ty := theme.Typescale[token.TypestyleBodyLarge]
-	styles := make([]styledtext.SpanStyle, len(r.runs))
-	frames := make([]image.Image, len(r.runs))
-	for i, run := range r.runs {
+	styles := make([]styledtext.SpanStyle, len(runs))
+	styleIndices := make([]int, 0, len(runs))
+	runeStart := block.runeStart
+	frames := make([]image.Image, len(runs))
+	for i, run := range runs {
 		st := styledtext.SpanStyle{Font: font.Font{Typeface: ty.Font, Weight: font.Normal}, Size: ty.Size, Content: run.Text, Color: scheme(gtx).Surface.OnColor.AsNRGBA()}
 		if run.Bold {
 			st.Font.Weight = font.Bold
@@ -848,10 +850,6 @@ func (p *chatPage) richText(gtx layout.Context, r *messageRow, l localization.Ca
 		if run.URL != "" {
 			st.Color = scheme(gtx).Primary.Color.AsNRGBA()
 		}
-		if run.Quote {
-			st.Font.Style = font.Italic
-			st.Color = scheme(gtx).SurfaceVariant.OnColor.AsNRGBA()
-		}
 		if run.Emoji != 0 && (!run.Spoiler || r.revealed || !r.text.reveal.started.IsZero()) {
 			msg := model.Message{Kind: model.MessageSticker, Media: &model.MessageMedia{ID: fmt.Sprintf("emoji/%d", run.Emoji), MIMEType: "application/x-custom-emoji"}}
 			frames[i], _ = p.media.Frame(msg, animate)
@@ -859,15 +857,41 @@ func (p *chatPage) richText(gtx layout.Context, r *messageRow, l localization.Ca
 				st.Color.A = 0
 			}
 		}
+		if i == 0 && block.trimStart {
+			st.Content = strings.TrimPrefix(st.Content, "\n")
+			runeStart++
+		}
+		if i == len(runs)-1 && block.trimEnd {
+			st.Content = strings.TrimSuffix(st.Content, "\n")
+		}
 		styles[i] = st
+		if st.Content != "" {
+			styleIndices = append(styleIndices, i)
+		}
 	}
-	r.text.fragments = r.text.fragments[:0]
-	text := styledtext.Text(theme.TextShaper, styles...)
-	text.Clusters = &r.text.clusters
+	flowStyles := make([]styledtext.SpanStyle, 0, len(styleIndices))
+	for _, i := range styleIndices {
+		flowStyles = append(flowStyles, styles[i])
+	}
+	text := styledtext.Text(theme.TextShaper, flowStyles...)
+	if runs[0].Pre {
+		text.WrapPolicy = styledtext.WrapGraphemes
+	}
+	text.Clusters = &block.clusters
+	if runs[0].Quote && runs[0].Collapsed && !block.expanded {
+		text.MaxLines = 3
+	}
 	text.Decorate = func(gtx layout.Context, f styledtext.Fragment, draw func()) {
+		i := styleIndices[f.Index]
+		f.Index = i + block.first
+		f.Bounds = f.Bounds.Add(origin)
+		for j := range f.Clusters {
+			f.Clusters[j].Bounds = f.Clusters[j].Bounds.Add(origin)
+			f.Clusters[j].Start += runeStart
+			f.Clusters[j].End += runeStart
+		}
 		r.text.fragments = append(r.text.fragments, f)
-		i := f.Index
-		run := r.runs[i]
+		run := runs[i]
 		size := f.Bounds.Size()
 		paintContent := func() {
 			draw()
@@ -897,17 +921,13 @@ func (p *chatPage) richText(gtx layout.Context, r *messageRow, l localization.Ca
 	dims := text.Layout(gtx, nil)
 	call := record.Stop()
 	if p.activeText == r {
-		for _, rect := range r.text.selectionRegions() {
+		selection := textInteraction{fragments: r.text.fragments[fragmentStart:], anchor: r.text.anchor, caret: r.text.caret}
+		for _, rect := range selection.selectionRegions() {
+			rect = rect.Sub(origin)
 			paint.FillShape(gtx.Ops, scheme(gtx).Primary.Color.SetOpacity(.28).AsNRGBA(), clip.Rect(rect).Op())
 		}
 	}
 	call.Add(gtx.Ops)
-	r.text.size = dims.Size
-	area := clip.Rect{Max: dims.Size}.Push(gtx.Ops)
-	pointer.CursorText.Add(gtx.Ops)
-	r.text.clicker.Add(gtx.Ops)
-	r.text.dragger.Add(gtx.Ops)
-	area.Pop()
 	return dims
 }
 

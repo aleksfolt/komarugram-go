@@ -91,6 +91,20 @@ The history is drawn as materialgram draws it:
 - Channel posts have no avatar; groups, channels and bots have an icon of
   their kind before the title in the chat list (`chatKindIcon`).
 
+### Code and quote entities (`history_text_blocks.go`)
+
+`chatPage.richText` groups `model.TextRuns` into inline flows and `pre`/quote
+blocks, retaining source rune offsets for selection across them. The block
+plate uses theme colors, and its copy/expand action uses `surface` and
+`textButton`. Collapsed quotes pass `MaxLines: 3` to `styledtext`; hidden
+lines have no hit regions. Code wraps by graphemes. Source newlines beside
+blocks remain in copied text without adding empty lines to the layout.
+
+`TEXT_BLOCKS_PNG_DIR=/tmp/text-blocks go test ./internal/messenger/ui -run
+TestRenderTextBlocks` draws both themes, narrow/wide and collapsed/expanded.
+`go run ./cmd/render-all -only text-blocks /tmp/text-blocks` runs the same
+scenes. The live demo includes the same example at the end of each history.
+
 ## Messenger views worth copying
 
 - **Chat list rows** (`chatlist.go`): `layoutRowWith` draws any row that looks
