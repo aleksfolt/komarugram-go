@@ -174,10 +174,10 @@ func convertMessage(account string, m tg.MessageClass, names map[int64]string) (
 		}
 		switch markup := m.ReplyMarkup.(type) {
 		case *tg.ReplyInlineMarkup:
-			out.Buttons = convertKeyboard(markup.Rows, false)
+			out.Buttons = convertInlineKeyboard(markup.Rows)
 		case *tg.ReplyKeyboardMarkup:
 			out.Keyboard = &model.ReplyKeyboard{
-				Rows:      convertKeyboard(markup.Rows, true),
+				Rows:      convertReplyKeyboard(markup.Rows),
 				SingleUse: markup.SingleUse, Persistent: markup.Persistent, Placeholder: markup.Placeholder,
 			}
 		case *tg.ReplyKeyboardHide:
@@ -374,33 +374,48 @@ func convertPoll(media *tg.MessageMediaPoll) *model.Poll {
 	return p
 }
 
-// convertKeyboard turns the rows of a bot's keyboard into the model's. In a
-// reply keyboard a plain button sends its own text; what this client does
-// not do stays a disabled "action".
-func convertKeyboard(rows []tg.KeyboardButtonRow, reply bool) [][]model.MessageButton {
+// convertInlineKeyboard turns the rows of the keyboard under a bot's message
+// into the model's; what this client does not do stays a disabled "action".
+func convertInlineKeyboard(rows []tg.KeyboardInlineButtonRow) [][]model.MessageButton {
 	var out [][]model.MessageButton
 	for _, r := range rows {
 		var row []model.MessageButton
 		for _, b := range r.Buttons {
-			btn := model.MessageButton{Text: b.GetText(), Kind: "action"}
-			switch b := b.(type) {
-			case *tg.KeyboardButtonURL:
-				btn.Kind, btn.URL = "url", b.URL
-			case *tg.KeyboardButtonCallback:
+			btn := model.MessageButton{Text: b.Text, Kind: "action"}
+			switch t := b.Type.(type) {
+			case *tg.InlineButtonTypeURL:
+				btn.Kind, btn.URL = "url", t.URL
+			case *tg.InlineButtonTypeCallback:
 				// One that wants the password is left disabled.
-				if !b.RequiresPassword {
-					btn.Kind, btn.Data = "callback", b.Data
+				if !t.RequiresPassword {
+					btn.Kind, btn.Data = "callback", t.Data
 				}
-			case *tg.KeyboardButtonCopy:
-				btn.Kind, btn.Copy = "copy", b.CopyText
-			case *tg.KeyboardButtonWebView:
-				btn.Kind, btn.URL = "webview", b.URL
-			case *tg.KeyboardButtonSimpleWebView:
-				btn.Kind, btn.URL = "simple_webview", b.URL
-			case *tg.KeyboardButton:
-				if reply {
-					btn.Kind = "text"
-				}
+			case *tg.InlineButtonTypeCopy:
+				btn.Kind, btn.Copy = "copy", t.CopyText
+			case *tg.InlineButtonTypeWebView:
+				btn.Kind, btn.URL = "webview", t.URL
+			}
+			row = append(row, btn)
+		}
+		out = append(out, row)
+	}
+	return out
+}
+
+// convertReplyKeyboard turns the rows of a bot's reply keyboard into the
+// model's. A plain button sends its own text; what this client does not do
+// stays a disabled "action".
+func convertReplyKeyboard(rows []tg.KeyboardButtonRow) [][]model.MessageButton {
+	var out [][]model.MessageButton
+	for _, r := range rows {
+		var row []model.MessageButton
+		for _, b := range r.Buttons {
+			btn := model.MessageButton{Text: b.Text, Kind: "action"}
+			switch t := b.Type.(type) {
+			case *tg.ButtonTypeDefault:
+				btn.Kind = "text"
+			case *tg.ButtonTypeSimpleWebView:
+				btn.Kind, btn.URL = "simple_webview", t.URL
 			}
 			row = append(row, btn)
 		}
