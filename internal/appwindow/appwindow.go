@@ -118,6 +118,13 @@ func (w *Window) Translucency() (transparent, blurred bool) {
 	return w.transparent, w.blurred
 }
 
+// CanBeTransparent reports whether the window can be made transparent: it is
+// now, or the system makes it when asked (macOS, where it is asked only when
+// the surfaces are translucent, see WantsTransparent).
+func (w *Window) CanBeTransparent() bool {
+	return runtime.GOOS == "darwin" || w.transparent
+}
+
 // SetTitle changes the window title. Setting the title it has does nothing:
 // callers may repeat it on every update, and on Windows each change
 // reconfigures the whole window.

@@ -335,8 +335,7 @@ func New(w *appwindow.Window, store model.Store, services Services) *App {
 		}
 	}
 	a.settings.windowTransparencyAvailable = func() bool {
-		transparent, _ := w.Translucency()
-		return transparent
+		return w.CanBeTransparent()
 	}
 	a.settings.overlays = func() preferences.Overlays { return a.preferences.Global().Overlays }
 	a.settings.setOverlays = func(o preferences.Overlays) {
