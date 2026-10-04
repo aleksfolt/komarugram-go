@@ -585,10 +585,15 @@ here the host has to, with the client's own font. MicroTeX does this
 itself, through `TextLayout`.
 
 **Compilation cache.** wazero's `NewCompilationCacheWithDir` cut the
-1.1 s compile to 25–31 ms on later runs, with an 8 MB cache. KomaruGram's
-modules are compiled anew in every process today; `pkg/sandbox` uses no
-compilation cache. That applies to libvpx, tlottie and the others as
-much as to a math module.
+1.1 s compile to 25–31 ms on later runs, with an 8 MB cache. `pkg/sandbox`
+now has a cache for every module (`pkg/sandbox/cache.go`):
+
+- **In memory,** shared by the runtimes of a process.
+- **On disk,** with every entry signed with HMAC-SHA256. The key is kept in
+  the configuration directory, apart from the cache.
+
+A RaTeX module only has to compile through `sandbox.Runtime.CompileModule`
+to use it.
 
 ### Decision: RaTeX (2026-10-04)
 
