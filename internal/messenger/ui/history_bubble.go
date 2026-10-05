@@ -342,7 +342,13 @@ func (p *chatPage) bubbleContent(gtx layout.Context, r *messageRow, m model.Mess
 			if m.Kind == model.MessageService {
 				return label(gtx, p.serviceText(m, l), token.TypestyleBodyMedium, sc.Surface.OnColor, 0)
 			}
-			return label(gtx, l.T("history.empty_message"), token.TypestyleBodyMedium, sc.SurfaceVariant.OnColor, 0)
+			text := l.T("history.empty_message")
+			if m.Rich != nil {
+				if kind := m.Rich.Fallback(); kind != "" {
+					text = l.T("rich." + kind)
+				}
+			}
+			return label(gtx, text, token.TypestyleBodyMedium, sc.SurfaceVariant.OnColor, 0)
 		}))
 	}
 	if len(m.Reactions) > 0 {

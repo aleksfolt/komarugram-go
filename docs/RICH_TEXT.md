@@ -1,7 +1,8 @@
 # Rich text, Markdown and LaTeX
 
 Status: implementation started, 2026-10-04. The first part of stage 0
-(code and quote blocks) is implemented; see "Implementation progress" below.
+(code and quote blocks) and stage 1 (reading rich messages, 2026-10-05)
+are implemented; see "Implementation progress" below.
 The research notes gather what Telegram sends, how Telegram Desktop shows
 it, what KomaruGram has, and a
 measured comparison of the libraries the work needs: a Markdown parser
@@ -216,7 +217,10 @@ The upgrade was tried in a scratch copy of the repository:
     email, phone, cashtag, bank card, formatted date and the diff
     entities.
 - **Ordinary entity blocks only; no article layout yet.**
-- **`rich_message` is not read.**
+- **`rich_message` is read** (stage 1): `tgstore/rich.go` converts it into
+  `model.RichPage`, and the message's text is the page's summary
+  (`model/rich_summary.go`). The bubble shows the summary until the article
+  engine draws the page (stages 2–3).
 - **A `.md` file opens in the system's program** (`ui/attachments.go`).
 - **No Instant View, no Markdown parser, no math.** goldmark is in `go.sum`
   only because gotd's tooling (ogen) needs it; it is not linked into the
@@ -1076,10 +1080,9 @@ are not in this plan.
 
 Remaining in stage 0: clickable hashtags, bot commands, email, phone
 and formatted dates. Mentions by ID came with the link handling merged
-from NaixROOT's fork (see below). `rich_message` conversion, summaries,
-full article loading and the shared article engine remain stages 1–3;
-rich messages themselves can still appear empty. RaTeX, highlighting,
-Markdown and Instant View remain later stages.
+from NaixROOT's fork (see below). Stage 1 is done (below); the shared
+article engine and drawing the page in the bubble remain stages 2–3.
+RaTeX, highlighting, Markdown and Instant View remain later stages.
 
 ### Focused validation
 
@@ -1137,6 +1140,85 @@ Markdown and Instant View remain later stages.
 - macOS, supported since `main` merged its port, was not built: darwin
   needs cgo (Gio's GL, `security`), which this machine cannot cross-build.
 
+### Stage 1: rich messages read
+
+2026-10-05, without new dependencies.
+
+- **Model** (`model/rich.go`). `RichPage` holds `RTL`, `Part` and blocks;
+  `RichBlock` is one struct whose fields depend on `Kind`, as tdesktop's
+  `RichPage::Block`. Text in blocks is `RichText`: text with
+  `model.Entity`s in UTF-16 units, as a message's, plus the anchors in it.
+  New entity kinds: `sub`, `sup`, `marked`, `hashtag`, `bot_command`,
+  `cashtag`, `email`, `phone`, `bank_card`, `math` (the formula's source),
+  `date` (with `Entity.Date` and `DateFormat`) and `button`
+  (`Entity.Button`). `TextRuns` ignores them for now, so they show as
+  plain text. Media are `model.MessageMedia` from the existing
+  `photoMedia`/`documentMedia`. `Message.Rich` carries the page into the
+  cache's JSON and into `model.Revision`.
+- **Conversion** (`tgstore/rich.go`) follows tdesktop's `AppendBlock` and
+  `AppendRichText`: headings 1–6 (title, subtitle, header, subheader and
+  kicker map to levels 1–5), the first anchor of a text goes to its block,
+  a list item's only paragraph becomes its text, a code block keeps no
+  links, a button's label keeps dates, a cover is its block, inline
+  images are `[image]`, formulas lose enclosing `$`. Bounds: 64 levels of
+  blocks and of text, 4,096 blocks, 8 buttons a row, spans up to 1,024.
+  The locations of every photo and document of the page are kept with the
+  message's (`richRefs`, `addMediaRefs`), so they download by `Media.ID`
+  as other media do.
+- **Summary** (`RichPage.Summary`) follows `FlattenRichPageSummary`: a
+  line for each block, list markers (`- `, `[x] `, `1.`, `a.`, `iv.`, an
+  item's own number), captions and credits, table and details titles,
+  button labels, formula sources. It is the message's text and entities,
+  so the chat list, replies, notifications and the FTS index need nothing
+  else. Departures from tdesktop:
+  - Headings stay bold, code blocks keep a `pre` entity with their
+    language, quotes a `quote` entity: until the article engine, the
+    bubble shows the article readable with the stage-0 blocks.
+  - No localized lines: tdesktop adds "Photo", "Table" and the like with
+    icons, and dates of author lines and related articles in the locale's
+    format. The cache's text stays the message's own; a page without text
+    names what it shows (`RichPage.Fallback`) where it is shown: in the
+    chat list (Russian, as the store's other previews) and in the bubble
+    (`rich.*` keys, tdesktop's `lng_in_dlg_*`).
+  - An ordered list of type `A` is numbered A, B, C. tdesktop compares
+    `a` without case first, so `A` gives a, b, c there.
+  - An embed's HTML is not kept: it is a page from a stranger, and this
+    client will show what it links to.
+- **The whole article** (`Store.RichMessage`, `model.RichStore`) is
+  `messages.getRichMessage`, which only reads. Its media's locations are
+  kept like the history's; the page is kept under `rich/<chat>/<id>` and
+  returned when Telegram cannot be reached. The history keeps the part.
+  Nothing asks for it yet: tdesktop's "Show more" button
+  (`lng_view_button_full_article`) and the article window are stage 3.
+- **Demo:** `mockstore.RichExample` is a rich message near the end of
+  demo histories, and the demo store gives it whole.
+- **Tests:** conversion of every kind of block and text from a fixture
+  that went through TL encoding (`tgstore/rich_test.go`), the cache and
+  revision, the bounds (each checked with its bound removed: blocks 1,000
+  deep, 10,001 blocks, text 1,000 deep), the whole article and its offline
+  copy, the chat list preview; list markers, trimming across surrogate
+  pairs (checked with the clipping removed) and fallbacks
+  (`model/rich_summary_test.go`).
+
+Live check, Linux/X11, on the maintainer's account with `@richtextdemobot`
+(only its callback buttons were pressed):
+
+- The menu (4 blocks) shows as text with a bold title and list markers,
+  in the chat and in the chat list, where it showed "Пустое сообщение".
+- "Long Message" edits the menu into a part: 109 blocks, `Part` set.
+  `messages.getRichMessage` returned it whole: 291 blocks, no error.
+- "All Types": 37 blocks; every block kind in it converted (heading,
+  paragraph, list, quote, code, media, math, table, details, map, anchor,
+  divider, footer), none `unsupported`; all 5 photos, videos and audio
+  found, each with its location kept.
+- `-demo -no-integrations` shows the demo article's summary.
+
+Left for later stages: drawing the page; the "Show more" button; a full
+article kept offline is replaced only by the next load, not by an edit;
+file references of the page's media renew only through the history's
+existing paths; formatted dates and the new entity kinds are drawn as
+plain text; `textImage` stays `[image]`, as in tdesktop.
+
 ### Fork work merged into main
 
 NaixROOT/komarugram-go's work is now in `main` (PR #21 and earlier), and
@@ -1171,9 +1253,10 @@ collapsed-quote regression scenarios, without an additional production fix.
   format. tdesktop's and Telegram for Android's behavior was verified by
   reading their code (Android's `CodeHighlighting.java` and
   `ThemeColors.java` fetched from GitHub; the repository was not cloned).
+- Verified live (2026-10-05): a rich message's `message` arrives empty.
+  The old converter copied it as it was, and the cache held `""` for the
+  bot's rich messages.
 - Not verified:
-  - the raw `message` of a rich message on the wire (only its effect, "Пустое
-    сообщение", was seen);
   - MicroTeX and RaTeX drawn by Gio inside the client (the prototypes draw
     to PNG with `x/image`), and with the client's own fonts for `\text` and
     Cyrillic;

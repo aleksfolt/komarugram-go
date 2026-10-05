@@ -134,6 +134,13 @@ func convertMessage(account string, m tg.MessageClass, names map[int64]string) (
 			}
 			out.Entities = append(out.Entities, entity)
 		}
+		if rich, ok := m.GetRichMessage(); ok {
+			// Telegram sends a rich message's text empty: it shows the
+			// article's summary, as Telegram Desktop does.
+			out.Rich = convertRich(rich)
+			summary := out.Rich.Summary()
+			out.Text, out.Entities = summary.Text, summary.Entities
+		}
 		switch media := m.Media.(type) {
 		case *tg.MessageMediaPhoto:
 			if p, ok := media.Photo.(*tg.Photo); ok {
@@ -383,25 +390,31 @@ func convertInlineKeyboard(rows []tg.KeyboardInlineButtonRow) [][]model.MessageB
 	for _, r := range rows {
 		var row []model.MessageButton
 		for _, b := range r.Buttons {
-			btn := model.MessageButton{Text: b.Text, Kind: "action"}
-			switch t := b.Type.(type) {
-			case *tg.InlineButtonTypeURL:
-				btn.Kind, btn.URL = "url", t.URL
-			case *tg.InlineButtonTypeCallback:
-				// One that wants the password is left disabled.
-				if !t.RequiresPassword {
-					btn.Kind, btn.Data = "callback", t.Data
-				}
-			case *tg.InlineButtonTypeCopy:
-				btn.Kind, btn.Copy = "copy", t.CopyText
-			case *tg.InlineButtonTypeWebView:
-				btn.Kind, btn.URL = "webview", t.URL
-			}
-			row = append(row, btn)
+			row = append(row, inlineButton(b.Text, b.Type))
 		}
 		out = append(out, row)
 	}
 	return out
+}
+
+// inlineButton is a button of a bot's message, or of a rich message, with
+// text and type t; what this client does not do stays a disabled "action".
+func inlineButton(text string, t tg.InlineButtonTypeClass) model.MessageButton {
+	btn := model.MessageButton{Text: text, Kind: "action"}
+	switch t := t.(type) {
+	case *tg.InlineButtonTypeURL:
+		btn.Kind, btn.URL = "url", t.URL
+	case *tg.InlineButtonTypeCallback:
+		// One that wants the password is left disabled.
+		if !t.RequiresPassword {
+			btn.Kind, btn.Data = "callback", t.Data
+		}
+	case *tg.InlineButtonTypeCopy:
+		btn.Kind, btn.Copy = "copy", t.CopyText
+	case *tg.InlineButtonTypeWebView:
+		btn.Kind, btn.URL = "webview", t.URL
+	}
+	return btn
 }
 
 // convertReplyKeyboard turns the rows of a bot's reply keyboard into the

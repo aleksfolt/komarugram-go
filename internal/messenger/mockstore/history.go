@@ -130,6 +130,10 @@ func (s *Store) History(chat int64) model.History {
 	spoiler := "Спойлер на нескольких строках: " + strings.Repeat("Нажмите здесь — текст откроется волной от места клика. ", 4)
 	add(spoiler, model.MessageText, nil, []model.Entity{{Kind: "spoiler", Offset: 0, Length: len(utf16.Encode([]rune(spoiler)))}}, nil)
 	add("Выделите часть этого текста и нажмите Ctrl/Cmd+C. Для выборки сообщений проведите по свободному месту рядом с пузырьками. Escape отменяет выделение.", model.MessageText, nil, nil, nil)
+	page := RichExample(true)
+	summary := page.Summary()
+	add(summary.Text, model.MessageText, nil, summary.Entities, nil)
+	messages[len(messages)-1].Rich = &page
 	blocksText, blocksEntities := TextBlocksExample()
 	add(blocksText, model.MessageText, nil, blocksEntities, nil)
 	if s.isChannel(chat) {

@@ -992,6 +992,29 @@ func (s *Store) ingest(ctx context.Context, raw []tg.MessageClass, live bool, st
 	return msgs, nil
 }
 
+// addMediaRefs keeps in refs where media, its sizes and its thumbnail
+// download from, ref being where media itself does. It returns the
+// thumbnail when its bytes came inline, to be kept as they are.
+func addMediaRefs(refs map[string]fileLocation, media *model.MessageMedia, ref fileLocation) *model.MessageMedia {
+	refs[media.ID] = ref
+	for _, v := range media.Variants {
+		vr := ref
+		vr.Thumb = v.ID[strings.LastIndexByte(v.ID, '/')+1:]
+		refs[v.ID] = vr
+	}
+	thumb := media.Thumbnail
+	if thumb == nil {
+		return nil
+	}
+	tr := ref
+	tr.Thumb = thumb.ID[strings.LastIndexByte(thumb.ID, '/')+1:]
+	if tr.Thumb == "inline" {
+		return thumb
+	}
+	refs[thumb.ID] = tr
+	return nil
+}
+
 // convert turns raw messages into the model's, and keeps where their media
 // can be downloaded from. Messages deleted, or changed by an update newer
 // than start, are left out. The caller holds c.apply.
@@ -1011,7 +1034,12 @@ func (s *Store) convert(ctx context.Context, raw []tg.MessageClass, live bool, s
 		}
 		m, ref := convertMessage(account, r, names)
 		refs := map[string]fileLocation{}
-		var inline *model.MessageMedia
+		var inlines []*model.MessageMedia
+		if raw, ok := r.(*tg.Message); ok {
+			if rich, ok := raw.GetRichMessage(); ok {
+				inlines = richRefs(rich, refs)
+			}
+		}
 		c.mu.Lock()
 		if c.deleted[m.Key] || (m.Key.ChatID > -1000000000000 && c.globalDeleted[int(m.Key.MessageID)]) || (!live && c.touched[m.Key] > start) {
 			c.mu.Unlock()
@@ -1026,25 +1054,12 @@ func (s *Store) convert(ctx context.Context, raw []tg.MessageClass, live bool, s
 			media = m.WebPage.Photo
 		}
 		if ref != nil && media != nil {
-			refs[media.ID] = *ref
-			for _, v := range media.Variants {
-				vr := *ref
-				vr.Thumb = v.ID[strings.LastIndexByte(v.ID, '/')+1:]
-				refs[v.ID] = vr
+			if inline := addMediaRefs(refs, media, *ref); inline != nil {
+				inlines = append(inlines, inline)
 			}
-			if thumb := media.Thumbnail; thumb != nil {
-				tr := *ref
-				parts := strings.Split(thumb.ID, "/")
-				tr.Thumb = parts[len(parts)-1]
-				if tr.Thumb == "inline" {
-					inline = thumb
-				} else {
-					refs[thumb.ID] = tr
-				}
-			}
-			for id, ref := range refs {
-				c.refs[id] = ref
-			}
+		}
+		for id, ref := range refs {
+			c.refs[id] = ref
 		}
 		c.mu.Unlock()
 		// SQLite/encryption may wait on disk or a media writer. Never keep the UI's
@@ -1055,7 +1070,7 @@ func (s *Store) convert(ctx context.Context, raw []tg.MessageClass, live bool, s
 					return nil, e
 				}
 			}
-			if inline != nil {
+			for _, inline := range inlines {
 				if e := cache.SaveMedia(ctx, inline.ID, inline.Preview); e != nil {
 					return nil, e
 				}
@@ -1429,6 +1444,9 @@ func setPreview(chat *model.Chat, m model.Message) {
 }
 
 func messageKindName(m model.Message) string {
+	if m.Rich != nil && strings.TrimSpace(m.Text) == "" {
+		return richFallbackName(*m.Rich)
+	}
 	switch m.Kind {
 	case model.MessagePhoto:
 		return "Фото"
@@ -1444,6 +1462,28 @@ func messageKindName(m model.Message) string {
 		return "GIF"
 	case model.MessageService:
 		return "Служебное сообщение"
+	}
+	return ""
+}
+
+// richFallbackName names what a rich message without text shows, as
+// Telegram Desktop's summary does.
+func richFallbackName(p model.RichPage) string {
+	switch p.Fallback() {
+	case "photo":
+		return "Фото"
+	case "video":
+		return "Видео"
+	case "album":
+		return "Альбом"
+	case "audio":
+		return "Аудиофайл"
+	case "file":
+		return "Файл"
+	case "map":
+		return "Геопозиция"
+	case "table":
+		return "Таблица"
 	}
 	return ""
 }

@@ -146,6 +146,8 @@ type Message struct {
 	// ForumTopic is set when the message's reply header marks it as part of
 	// a forum topic: it replies to the topic's root, or to a message in it.
 	ForumTopic bool `json:",omitempty"`
+	// Rich is a rich message's article; Text is its summary then.
+	Rich *RichPage `json:",omitempty"`
 	// MediaUnread is Telegram's mark of a voice message nobody listened to
 	// yet: the account, for one that came, or who it was sent to. Telegram
 	// sets it on an unread mention as well; only voice messages show it.
@@ -314,7 +316,26 @@ type Entity struct {
 	DocumentID     int64
 	Language       string `json:",omitempty"`
 	Collapsed      bool   `json:",omitempty"`
+	// Date and DateFormat are a formatted date's: Unix seconds, and how it
+	// is written.
+	Date       int64      `json:",omitempty"`
+	DateFormat DateFormat `json:",omitempty"`
+	// Button is an inline button's, in a rich message's text.
+	Button *MessageButton `json:",omitempty"`
 }
+
+// DateFormat is how a formatted date entity is written, as Telegram's
+// flags say.
+type DateFormat uint8
+
+const (
+	DateRelative DateFormat = 1 << iota
+	DateShortTime
+	DateLongTime
+	DateShortDate
+	DateLongDate
+	DateDayOfWeek
+)
 
 // MessageButton is a button of a bot's keyboard, under a message or in a
 // reply keyboard. Kind is "url" (opens URL), "callback" (asks the bot,
