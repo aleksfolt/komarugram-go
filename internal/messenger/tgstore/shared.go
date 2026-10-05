@@ -20,6 +20,8 @@ func sharedFilter(kind model.SharedKind) (tg.MessagesFilterClass, error) {
 		return &tg.InputMessagesFilterPhotos{}, nil
 	case model.SharedVideos:
 		return &tg.InputMessagesFilterVideo{}, nil
+	case model.SharedPhotoVideos:
+		return &tg.InputMessagesFilterPhotoVideo{}, nil
 	case model.SharedFiles:
 		return &tg.InputMessagesFilterDocument{}, nil
 	case model.SharedMusic:

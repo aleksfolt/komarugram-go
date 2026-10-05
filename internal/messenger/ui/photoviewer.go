@@ -9,6 +9,7 @@ import (
 	"image/color"
 	"math"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -118,6 +119,11 @@ type photoViewer struct {
 	strip         layout.List
 	drag          stripDrag
 	thumbState    map[model.MessageID]*viewerThumbState
+	targets       map[model.MessageID]model.Message
+	// play opens a video in the external player; playErrs bring what it
+	// failed with.
+	play     func(gtx layout.Context, m model.Message, l localization.Catalog)
+	playErrs chan error
 	// drawn is the photo the last frame drew, for tests to compare with
 	// current.
 	drawn model.MessageID
@@ -150,7 +156,7 @@ type photoList struct {
 }
 
 func newPhotoViewer(source model.ConversationStore, images *imageOps, invalidate func()) *photoViewer {
-	v := &photoViewer{source: source, images: images, invalidate: invalidate, thumbState: map[model.MessageID]*viewerThumbState{}, backdropColor: viewerBackdrop}
+	v := &photoViewer{source: source, images: images, invalidate: invalidate, thumbState: map[model.MessageID]*viewerThumbState{}, backdropColor: viewerBackdrop, playErrs: make(chan error, 1)}
 	v.gallery, _ = source.(model.PhotoGallery)
 	v.profiles, _ = source.(model.ProfilePhotoSource)
 	v.full = chatmedia.NewSized(source, invalidate, viewerFullLimit, 4096)
@@ -174,7 +180,11 @@ func (v *photoViewer) openList(chat int64, m model.Message, list photoList) {
 		v.cancel()
 	}
 	v.session++
-	v.items = mergePhotos(mergePhotos(nil, []model.Message{m}), list.items)
+	v.items = mergePhotos(nil, list.items)
+	if indexOf(v.items, m.Key.MessageID) < 0 {
+		v.items = append(v.items, m)
+		sort.Slice(v.items, func(i, j int) bool { return v.items[i].Key.MessageID < v.items[j].Key.MessageID })
+	}
 	v.total, v.ended, v.profile, v.offset = list.total, list.ended, list.profile, list.offset
 	pageless := v.gallery == nil || m.Key.MessageID < 0
 	if v.profile {
@@ -192,8 +202,14 @@ func (v *photoViewer) openList(chat int64, m model.Message, list photoList) {
 	v.chat, v.current = chat, m.Key.MessageID
 	v.strip.Position = layout.Position{}
 	clear(v.thumbState)
+	clear(v.targets)
 	v.fetch(ctx, session, -1, first)
 	v.fetch(ctx, session, 1, last)
+}
+
+// OpenAlone shows m without a gallery, as a GIF is.
+func (v *photoViewer) OpenAlone(chat int64, m model.Message) {
+	v.openList(chat, m, photoList{ended: [2]bool{true, true}})
 }
 
 // OpenProfile shows the photos of chat's profile, the one it shows now
@@ -295,14 +311,44 @@ func (v *photoViewer) fetch(ctx context.Context, session, dir int, anchor model.
 	}()
 }
 
-// mergePhotos adds photos to a sorted list, once each.
+func inGallery(m model.Message) bool {
+	return (m.Kind == model.MessagePhoto || m.Kind == model.MessageVideo) && m.Media != nil
+}
+
+// viewerTarget is what the viewer decodes for m: a video's thumbnail, in the
+// video's proportions; ok is false for a video without one.
+func (v *photoViewer) viewerTarget(m model.Message) (model.Message, bool) {
+	if m.Kind != model.MessageVideo {
+		return m, m.Media != nil
+	}
+	if m.Media.Thumbnail == nil {
+		return m, false
+	}
+	if t, ok := v.targets[m.Key.MessageID]; ok {
+		return t, true
+	}
+	thumb := *m.Media.Thumbnail
+	thumb.Width, thumb.Height = m.Media.Width, m.Media.Height
+	if thumb.Preview == nil {
+		thumb.Preview = m.Media.Preview
+	}
+	t := m.WithMedia(&thumb)
+	t.Kind = model.MessagePhoto
+	if v.targets == nil {
+		v.targets = map[model.MessageID]model.Message{}
+	}
+	v.targets[m.Key.MessageID] = t
+	return t, true
+}
+
+// mergePhotos adds photos and videos to a sorted list, once each.
 func mergePhotos(items, add []model.Message) []model.Message {
 	seen := make(map[model.MessageID]bool, len(items))
 	for _, m := range items {
 		seen[m.Key.MessageID] = true
 	}
 	for _, m := range add {
-		if m.Kind == model.MessagePhoto && m.Media != nil && !seen[m.Key.MessageID] {
+		if inGallery(m) && !seen[m.Key.MessageID] {
 			seen[m.Key.MessageID] = true
 			items = append(items, m)
 		}
@@ -411,6 +457,11 @@ func (v *photoViewer) Layout(gtx layout.Context, l localization.Catalog, animate
 		return
 	}
 	v.updateKept(gtx)
+	select {
+	case err := <-v.playErrs:
+		v.toast.Show(mediaErrorText(err))
+	default:
+	}
 	if cur := items[indexOf(items, v.current)]; canKeep(cur) {
 		if v.save.Clicked(gtx) {
 			v.keepPhoto(cur, false, l)
@@ -433,10 +484,12 @@ func (v *photoViewer) Layout(gtx layout.Context, l localization.Catalog, animate
 		v.since = gtx.Now
 	}
 	// Keep decoded only what the arrows lead to and the way back.
-	keep := []string{items[i].Media.ID}
-	for _, j := range []int{i - 1, i + 1, indexOf(items, v.previous)} {
+	var keep []string
+	for _, j := range []int{i, i - 1, i + 1, indexOf(items, v.previous)} {
 		if j >= 0 && j < len(items) {
-			keep = append(keep, items[j].Media.ID)
+			if t, ok := v.viewerTarget(items[j]); ok {
+				keep = append(keep, t.Media.ID)
+			}
 		}
 	}
 	v.full.Retain(keep...)
@@ -464,17 +517,20 @@ func (v *photoViewer) Layout(gtx layout.Context, l localization.Catalog, animate
 	})
 
 	v.layoutPhoto(gtx, items[i], stage, view, fit, l, animate)
+	captionTop := v.layoutCaption(gtx, items[i], stage)
 	v.layoutSides(gtx, view, i > 0, i < len(items)-1)
 	// Over the side zones, so that the wheel works there too; it passes
 	// clicks on to them.
 	v.zoomArea(gtx, view, photo)
 	v.layoutBar(gtx, items, i, l)
 	v.layoutStrip(gtx, items, i, image.Rect(0, size.Y-strip, size.X, size.Y))
-	v.toast.Layout(gtx, image.Rect(0, bar, size.X, size.Y-strip))
+	v.toast.Layout(gtx, image.Rect(0, bar, size.X, min(size.Y-strip, captionTop)))
 	// Decode the neighbours ahead, so that the arrows switch at once.
 	for _, j := range []int{i - 1, i + 1} {
 		if j >= 0 && j < len(items) {
-			v.full.StatusFit(items[j], false, stage.Size(), false)
+			if t, ok := v.viewerTarget(items[j]); ok {
+				v.full.StatusFit(t, false, stage.Size(), false)
+			}
 		}
 	}
 }
@@ -545,15 +601,20 @@ func (v *photoViewer) keyEvents(gtx layout.Context, items []model.Message, i int
 // layoutPhoto draws the current photo centered in stage, never larger than
 // its own pixels. Until it is decoded, its thumbnail or blurred preview is
 // stretched to the same place.
-func (v *photoViewer) layoutPhoto(gtx layout.Context, m model.Message, stage, view image.Rectangle, fit float32, l localization.Catalog, animate bool) {
-	v.drawn = m.Key.MessageID
+func (v *photoViewer) layoutPhoto(gtx layout.Context, item model.Message, stage, view image.Rectangle, fit float32, l localization.Catalog, animate bool) {
+	v.drawn = item.Key.MessageID
+	video := item.Kind == model.MessageVideo
+	m, decodable := v.viewerTarget(item)
 	box := stage.Size()
 	if v.zoom.active() && v.zoom.target > fit {
 		// Enlarged, the photo is decoded at its own size; the fitted frame
 		// stays on screen until then.
 		box = native(m)
 	}
-	status := v.full.StatusFit(m, animate, box, false)
+	var status chatmedia.Status
+	if decodable {
+		status = v.full.StatusFit(m, animate, box, false)
+	}
 	w, h := m.Media.Width, m.Media.Height
 	if status.Frame != nil && (w <= 0 || h <= 0) {
 		b := status.Frame.Bounds()
@@ -576,7 +637,7 @@ func (v *photoViewer) layoutPhoto(gtx layout.Context, m model.Message, stage, vi
 	}
 	defer clip.Rect(view).Push(gtx.Ops).Pop()
 	im := status.Frame
-	if im == nil {
+	if im == nil && decodable {
 		// Half the stage in a smaller variant, decoded in a few milliseconds
 		// and usually cached by the chat tile, then the thumbnail, then the
 		// blurred preview.
@@ -585,7 +646,7 @@ func (v *photoViewer) layoutPhoto(gtx layout.Context, m model.Message, stage, vi
 			im = v.mid.StatusFit(v.variant(m, mid), false, half, false).Frame
 		}
 	}
-	if im == nil {
+	if im == nil && decodable {
 		if t := v.thumb(m, gtx.Dp(viewerThumb)); t != nil {
 			im = v.thumbs.StatusFit(*t, false, image.Pt(gtx.Dp(viewerThumb), gtx.Dp(viewerThumb)), true).Frame
 		}
@@ -601,8 +662,13 @@ func (v *photoViewer) layoutPhoto(gtx layout.Context, m model.Message, stage, vi
 			showRing = true
 		}
 	}
-	if v.picture.Clicked(gtx) && (status.Err != nil || status.Cancelled) {
-		v.full.Retry(m)
+	if v.picture.Clicked(gtx) {
+		switch {
+		case video && v.play != nil:
+			v.play(gtx, item, l)
+		case status.Err != nil || status.Cancelled:
+			v.full.Retry(m)
+		}
 	}
 	offset(gtx, origin, func(gtx layout.Context) layout.Dimensions {
 		return v.picture.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
@@ -611,6 +677,18 @@ func (v *photoViewer) layoutPhoto(gtx layout.Context, m model.Message, stage, vi
 				fillRect(gtx, token.NewMatColorFromHexRGB(0x1d2127), shown)
 			} else {
 				widget.Image{Src: v.images.Op(im), Fit: widget.Fill}.Layout(gtx)
+			}
+			if video && !showRing {
+				d := min(gtx.Dp(64), shown.X, shown.Y)
+				offset(gtx, shown.Sub(image.Pt(d, d)).Div(2), func(gtx layout.Context) layout.Dimensions {
+					paint.FillShape(gtx.Ops, color.NRGBA{A: 150}, clip.Ellipse{Max: image.Pt(d, d)}.Op(gtx.Ops))
+					inner := d * 3 / 4
+					return offset(gtx, image.Pt((d-inner)/2, (d-inner)/2), func(gtx layout.Context) layout.Dimensions {
+						return exact(gtx, image.Pt(inner, inner), func(gtx layout.Context) layout.Dimensions {
+							return iconPlayFile(gtx, token.NewMatColorFromHexRGB(0xffffff))
+						})
+					})
+				})
 			}
 			if showRing {
 				diameter := min(gtx.Dp(56), shown.X, shown.Y)
@@ -637,6 +715,44 @@ func (v *photoViewer) layoutPhoto(gtx layout.Context, m model.Message, stage, vi
 			return layout.Dimensions{Size: shown}
 		})
 	})
+}
+
+// reportPlay tells the viewer why a video did not play; it may be called
+// from any goroutine.
+func (v *photoViewer) reportPlay(err error) {
+	if err == nil {
+		return
+	}
+	select {
+	case v.playErrs <- err:
+		v.invalidate()
+	default:
+	}
+}
+
+// layoutCaption draws m's caption over the bottom of the stage, and returns
+// where its top is.
+func (v *photoViewer) layoutCaption(gtx layout.Context, m model.Message, stage image.Rectangle) int {
+	text := strings.TrimSpace(m.Text)
+	if text == "" {
+		return math.MaxInt
+	}
+	pad, margin := gtx.Dp(12), gtx.Dp(12)
+	gtx.Constraints = layout.Constraints{Max: image.Pt(max(0, min(stage.Dx()-2*margin, gtx.Dp(640))-2*pad), stage.Dy()/3)}
+	macro := op.Record(gtx.Ops)
+	dims := label(gtx, text, token.TypestyleBodyLarge, token.NewMatColorFromHexRGB(0xffffff), 4)
+	call := macro.Stop()
+	size := dims.Size.Add(image.Pt(2*pad, 2*gtx.Dp(8)))
+	at := image.Pt(stage.Min.X+(stage.Dx()-size.X)/2, stage.Max.Y-margin-size.Y)
+	offset(gtx, at, func(gtx layout.Context) layout.Dimensions {
+		paint.FillShape(gtx.Ops, color.NRGBA{A: 150}, clip.UniformRRect(image.Rectangle{Max: size}, gtx.Dp(8)).Op(gtx.Ops))
+		offset(gtx, image.Pt(pad, gtx.Dp(8)), func(gtx layout.Context) layout.Dimensions {
+			call.Add(gtx.Ops)
+			return dims
+		})
+		return layout.Dimensions{Size: size}
+	})
+	return at.Y
 }
 
 // layoutSides lays out the zones beside the photo that switch to its
@@ -710,7 +826,13 @@ func (v *photoViewer) layoutBar(gtx layout.Context, items []model.Message, i int
 					return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 							title := l.T("viewer.photo")
-							if n, amount, ok := v.place(items, i); ok {
+							switch m.Kind {
+							case model.MessageVideo:
+								title = l.T("viewer.video")
+							case model.MessageGIF:
+								title = "GIF"
+							}
+							if n, amount, ok := v.place(items, i); ok && m.Kind != model.MessageGIF {
 								title = l.Format("viewer.position", map[string]string{"n": fmt.Sprint(n), "amount": fmt.Sprint(amount)})
 							}
 							return label(gtx, title, token.TypestyleTitleSmall, white, 1)
@@ -811,7 +933,10 @@ func (v *photoViewer) layoutStrip(gtx layout.Context, items []model.Message, cur
 	offset(stripGtx, image.Pt(x, y), func(gtx layout.Context) layout.Dimensions {
 		dims := v.strip.Layout(gtx, len(items), func(gtx layout.Context, i int) layout.Dimensions {
 			m := items[i]
-			t := v.thumb(m, side)
+			var t *model.Message
+			if target, ok := v.viewerTarget(m); ok {
+				t = v.thumb(target, side)
+			}
 			st := v.thumbState[m.Key.MessageID]
 			return layout.Inset{Right: unit.Dp(float32(gap) / gtx.Metric.PxPerDp)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				return st.click.Layout(gtx, func(gtx layout.Context) layout.Dimensions {

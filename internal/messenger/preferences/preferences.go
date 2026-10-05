@@ -109,6 +109,9 @@ type Global struct {
 	// Ghost is what the accounts tell others of themselves, as AyuGram's
 	// Ghost Mode, the same for all of them.
 	Ghost Ghost `json:"ghost"`
+	// Notify is how new messages are told of, as Telegram Desktop's
+	// Notifications and Sounds.
+	Notify Notify `json:"notify"`
 	// Keep is what the cache keeps that Telegram takes back, as AyuGram's
 	// saved deleted messages and edits history.
 	Keep Keep `json:"keep"`
@@ -257,6 +260,24 @@ type Keep struct {
 	Edits   bool `json:"edits"`
 }
 
+// Notify is how new messages are told of. All is on by default, as in
+// Telegram Desktop; the fields are saved even when false. The kinds of
+// chat are this client's own: Telegram Desktop keeps them in the cloud.
+type Notify struct {
+	Desktop bool `json:"desktop"`
+	Sound   bool `json:"sound"`
+	// Name and Text are what a notification shows of the message.
+	Name bool `json:"name"`
+	Text bool `json:"text"`
+	// Private (users and bots), Groups and Channels are the chats told of.
+	Private  bool `json:"private"`
+	Groups   bool `json:"groups"`
+	Channels bool `json:"channels"`
+	// AllAccounts tells of every account's messages, not only of the one
+	// used last.
+	AllAccounts bool `json:"all_accounts"`
+}
+
 // Ghost is what the accounts tell others: see model.Ghost. Everything is
 // told by default, as Telegram does, and Ghost Mode is choosing not to:
 // the fields are saved even when false, or a choice would come back as the
@@ -313,6 +334,7 @@ func defaults() Global {
 		Overlays:       Overlays{Transparency: 30, MenusBlur: true, ToastsBlur: true},
 		Ghost:          Ghost{SendRead: true, SendOnline: true, SendTyping: true, ReadOnInteract: true},
 		Keep:           Keep{Deleted: true, Edits: true},
+		Notify:         Notify{Desktop: true, Sound: true, Name: true, Text: true, Private: true, Groups: true, Channels: true, AllAccounts: true},
 		Look:           Look{BubbleRadius: BubbleRadiusMax, AvatarCorners: AvatarRound},
 	}
 }
@@ -500,6 +522,10 @@ func (s *Store) SetWindowLock(minutes int, minimize, close bool) error {
 }
 
 // SetGhost changes what the accounts tell others of themselves.
+func (s *Store) SetNotify(n Notify) error {
+	return s.change(func(global *Global) { global.Notify = n })
+}
+
 func (s *Store) SetGhost(g Ghost) error {
 	return s.change(func(global *Global) { global.Ghost = g })
 }

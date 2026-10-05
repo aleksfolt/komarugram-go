@@ -16,6 +16,8 @@ const (
 	SharedGIFs   SharedKind = "gifs"
 	SharedPolls  SharedKind = "polls"
 	SharedSaved  SharedKind = "saved"
+	// SharedPhotoVideos is the photo viewer's gallery, not a section.
+	SharedPhotoVideos SharedKind = "photo_videos"
 )
 
 var SharedKinds = []SharedKind{SharedSaved, SharedPhotos, SharedVideos, SharedFiles, SharedMusic, SharedLinks, SharedPolls, SharedVoice, SharedGIFs}

@@ -17,6 +17,7 @@ import (
 	"gioui.org/io/system"
 	"github.com/gotd/td/telegram"
 	"github.com/gotd/td/telegram/updates"
+	"github.com/gotd/td/telegram/updates/hook"
 	"golang.org/x/sync/errgroup"
 
 	"komarugram/internal/appwindow"
@@ -30,6 +31,7 @@ import (
 	"komarugram/internal/messenger/tgstore"
 	"komarugram/internal/messenger/ui"
 	"komarugram/internal/miniappprefs"
+	"komarugram/internal/notify"
 )
 
 // logOutTimeout bounds how long leaving an account waits for Telegram
@@ -80,6 +82,7 @@ type accountWindows struct {
 	// tray, if set, lets a closed window leave its account running in the
 	// background while the icon is shown. quitting stops every account.
 	tray     interface{ Available() bool }
+	notifier notify.Notifier
 	quitting bool
 }
 
@@ -351,12 +354,14 @@ func (h *accountWindows) hold() func() {
 }
 
 func (h *accountWindows) newSession() *accountSession {
-	return newSession(h.hold(), func(s *accountSession) {
+	s := newSession(h.hold(), func(s *accountSession) {
 		if id := s.accountID(); id != "" {
 			h.updateProfile(id, s.store.Me(), s.window.Load())
 		}
 		s.invalidate()
 	})
+	s.store.SetNotices(func(n model.MessageNotice) { h.notice(s, n) })
+	return s
 }
 
 // LogOut implements model.Accounts. The account's window closes first, so
@@ -514,11 +519,13 @@ func (h *accountWindows) windowSpec(a *account.Account, session *accountSession,
 		session = h.newSession()
 	}
 	var window *appwindow.Window
+	var app *ui.App
 	return appwindow.Spec{
 		Options:   options,
 		Activated: func() { h.remember(session.accountID()) },
 		Closed: func() {
 			session.window.CompareAndSwap(window, nil)
+			session.app.CompareAndSwap(app, nil)
 			id := session.accountID()
 			if id != "" && h.security != nil && h.security.Enabled() && h.preferences.Global().LockOnClose {
 				session.locked.Store(true)
@@ -538,6 +545,11 @@ func (h *accountWindows) windowSpec(a *account.Account, session *accountSession,
 				CurrentAccount: session.accountID,
 				OpenWindow:     h.process.Open,
 			})
+			app = content
+			session.app.Store(content)
+			if chat := session.openChat.Swap(0); chat != 0 {
+				content.OpenChat(chat)
+			}
 			if a != nil {
 				session.id.Store(a.ID)
 				h.bind(a, session, w)
@@ -809,5 +821,10 @@ func (h *accountWindows) runClient(ctx context.Context, a *account.Account, stor
 			return nil
 		})
 		return group.Wait()
-	}, store.Middleware())
+	},
+		// Updates that come as replies to requests, and the pts of their
+		// messages.affected* replies, go to the manager too: without them
+		// its pts falls behind after each read, deletion or message sent,
+		// and the next update waits for a getDifference.
+		store.Middleware(), hook.UpdateHook(manager.Handle), hook.AffectedHook(manager))
 }

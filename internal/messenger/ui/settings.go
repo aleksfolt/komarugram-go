@@ -65,6 +65,9 @@ const (
 	// settingsChats is the theme and the wallpaper of the chats, the composer
 	// and how messages look, as Telegram Desktop's Chat Settings.
 	settingsChats
+	// settingsNotify is how new messages are told of, as Telegram Desktop's
+	// Notifications and Sounds.
+	settingsNotify
 )
 
 func settingsTitles(l localization.Catalog) map[settingsSection]string {
@@ -73,6 +76,7 @@ func settingsTitles(l localization.Catalog) map[settingsSection]string {
 		settingsPrivacy: l.T("settings.privacy"), settingsPower: l.T("settings.power"),
 		settingsPremium: l.T("premium.title"), settingsIntegrations: l.T("settings.integrations"),
 		settingsDevices: l.T("settings.devices"), settingsChats: l.T("settings.chats"),
+		settingsNotify: l.T("settings.notify"),
 	}
 }
 
@@ -85,6 +89,7 @@ var settingsIcons = map[settingsSection]wdk.IconWidget{
 	settingsIntegrations: iconIntegrations,
 	settingsDevices:      iconDevices,
 	settingsChats:        iconChats,
+	settingsNotify:       iconNotifications,
 }
 
 func storageShort(l localization.Catalog) map[miniapp.Storage]string {
@@ -148,6 +153,8 @@ type settingsPage struct {
 	keep     func() preferences.Keep
 	setKeep  func(preferences.Keep)
 	keepOpts *toggle.Toggle[string]
+	// notifyView changes notifications; hidden without its functions.
+	notifyView *notifySettings
 	// filtersView edits the message filters; hidden without its functions.
 	filtersView *filterSettings
 	// lookView changes how messages and avatars are drawn.
@@ -222,6 +229,7 @@ func newSettingsPage(m *motion.Settings, miniapps *miniappprefs.Settings, protec
 			settingsIntegrations: new(settingsItem),
 			settingsDevices:      new(settingsItem),
 			settingsChats:        new(settingsItem),
+			settingsNotify:       new(settingsItem),
 		},
 		back:          button.Text(),
 		motion:        m,
@@ -263,6 +271,7 @@ func newSettingsPage(m *motion.Settings, miniapps *miniappprefs.Settings, protec
 			p.setGhost(ghostFromOptions(values))
 		}
 	})
+	p.notifyView = newNotifySettings()
 	p.filtersView = newFilterSettings()
 	p.lookView = newLookSettings()
 	p.fontsView = newFontSettings(invalidate)
@@ -559,6 +568,9 @@ func (p *settingsPage) Layout(gtx layout.Context, mode themeMode, system appeara
 			content = func(gtx layout.Context) layout.Dimensions { return p.sessions.Layout(gtx, l) }
 		case settingsChats:
 			content = func(gtx layout.Context) layout.Dimensions { return p.layoutChats(gtx, l) }
+		case settingsNotify:
+			// The accounts are as the main page last listed them.
+			content = func(gtx layout.Context) layout.Dimensions { return p.notifyView.Layout(gtx, l, len(p.shownAccounts)) }
 		default:
 			content = func(gtx layout.Context) layout.Dimensions {
 				return p.layoutMain(gtx, mode, dark, l)
@@ -653,6 +665,7 @@ func (p *settingsPage) layoutMain(gtx layout.Context, mode themeMode, dark bool,
 		settingsIntegrations: p.players.subtitle(l),
 		settingsDevices:      l.T("settings.devices_hint"),
 		settingsChats:        p.chats.subtitle(l),
+		settingsNotify:       p.notifyView.subtitle(l),
 	}
 	if n := p.sessions.count(); n > 0 {
 		subtitles[settingsDevices] = l.Count("sessions.count", n, nil)
@@ -724,6 +737,9 @@ func (p *settingsPage) layoutMain(gtx layout.Context, mode themeMode, dark bool,
 				sections := []settingsSection{settingsAppearance}
 				if p.chats.available() || p.composerStyle != nil || p.lookView.look != nil {
 					sections = append(sections, settingsChats)
+				}
+				if p.notifyView.get != nil {
+					sections = append(sections, settingsNotify)
 				}
 				sections = append(sections, settingsPrivacy, settingsPower)
 				if p.sessions != nil {

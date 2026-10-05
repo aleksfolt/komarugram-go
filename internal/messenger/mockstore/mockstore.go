@@ -40,6 +40,9 @@ type Store struct {
 	created time.Time
 	// miniApp is the bundled Mini App the demo's bots open, served once asked.
 	miniApp *miniapp.Demo
+	// notices tells of what Receive brings, the received-th message.
+	notices  func(model.MessageNotice)
+	received int
 }
 
 // New returns a store with demo chats whose times are relative to now, and

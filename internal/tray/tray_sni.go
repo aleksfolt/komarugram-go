@@ -491,3 +491,7 @@ const menuIntrospection = `<node>
   <signal name="PropertiesChanged"><arg name="interface" type="s"/><arg name="changed_properties" type="a{sv}"/><arg name="invalidated_properties" type="as"/></signal>
  </interface>
 </node>`
+
+// Notify is not the tray's on these desktops: notifications have their own
+// D-Bus service (internal/notify).
+func (*Tray) Notify(string, string, bool) error { return ErrUnsupported }

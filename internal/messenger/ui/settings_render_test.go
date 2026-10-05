@@ -44,7 +44,7 @@ func (staticAccounts) Subscribe(func()) func()    { return func() {} }
 
 // TestRenderSettingsAccounts draws the main settings page with a list of
 // saved accounts and saves a screenshot, for looking at it. SETTINGS_SECTION=appearance,
-// chats, privacy or integrations draws that section instead; wallpapers,
+// chats, notify, privacy or integrations draws that section instead; wallpapers,
 // the chats' section under the gallery of wallpapers:
 //
 //	SETTINGS_PNG=/tmp/settings.png go test ./internal/messenger/ui -run RenderSettingsAccounts
@@ -145,6 +145,15 @@ func TestRenderSettingsAccounts(t *testing.T) {
 			c.layoutDialog(gtx, localization.For("ru"))
 			time.Sleep(50 * time.Millisecond)
 		}
+	}
+	// Sound and channels off, to show both states of a switch.
+	notifyPrefs := preferences.Notify{Desktop: true, Name: true, Text: true, Private: true, Groups: true, AllAccounts: true}
+	p.notifyView.get = func() preferences.Notify { return notifyPrefs }
+	p.notifyView.set = func(n preferences.Notify) { notifyPrefs = n }
+	if os.Getenv("SETTINGS_SECTION") == "notify" {
+		p.section = settingsNotify
+		p.shownAccounts = p.accounts.All()
+		size.Y = 1100
 	}
 	if os.Getenv("SETTINGS_SECTION") == "privacy" {
 		p.section = settingsPrivacy

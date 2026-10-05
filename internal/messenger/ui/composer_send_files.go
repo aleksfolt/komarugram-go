@@ -252,6 +252,11 @@ func (c *messageComposer) sendFiles(l localization.Catalog) {
 		}
 	}
 	c.submit(c.chat, model.OutgoingMessage{Text: caption, Files: &model.OutgoingFiles{Paths: paths, Documents: way.Documents, Group: way.Group, HighQuality: way.HighQuality}})
+	for _, path := range paths {
+		if c.pasted[path] {
+			c.uploading[path] = true
+		}
+	}
 	b.modal.Close()
 }
 
@@ -272,6 +277,9 @@ func (c *messageComposer) layoutFilesBox(gtx layout.Context, p *chatPage, l loca
 		}
 	}
 	if !b.modal.Shown() {
+		if len(c.pasted) > len(c.uploading) {
+			c.forgetPasted(nil)
+		}
 		return
 	}
 	// The checkboxes follow the way; a click on one changes it.

@@ -28,7 +28,7 @@ func TestStickerSetAuthorOpensChat(t *testing.T) {
 	h := newComposerHarness(t)
 	openStickerSet(h, model.StickerSet{Title: "Cats", AuthorID: 123, Count: 1, Items: []model.PickerItem{{Emoji: "🐈"}}})
 	var opened model.Chat
-	h.p.openAuthor = func(chat model.Chat) { opened = chat }
+	h.p.openChat = func(chat model.Chat, _ model.MessageID) { opened = chat }
 	h.p.stickers.authorResult = &stickerSetResult{authorID: 123, author: &model.Chat{ID: 123, Title: "Creator"}}
 	h.frame()
 	if opened.ID != 123 || !h.p.stickers.modal.closing {

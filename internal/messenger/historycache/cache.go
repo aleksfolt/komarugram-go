@@ -84,7 +84,9 @@ func (c *Cache) open() error {
  CREATE TABLE IF NOT EXISTS layouts(chat INTEGER,id INTEGER,env TEXT,revision INTEGER,height INTEGER,PRIMARY KEY(chat,id,env));
  CREATE TABLE IF NOT EXISTS media(key TEXT PRIMARY KEY,data BLOB,used INTEGER);
  CREATE TABLE IF NOT EXISTS edits(chat INTEGER,id INTEGER,at INTEGER,payload BLOB,PRIMARY KEY(chat,id,at));
- CREATE INDEX IF NOT EXISTS photos ON messages(chat,id) WHERE ` + photoWhere + `;`)
+ CREATE TABLE IF NOT EXISTS spans(chat INTEGER,low INTEGER,high INTEGER,PRIMARY KEY(chat,low));
+ DROP INDEX IF EXISTS photos;
+ CREATE INDEX IF NOT EXISTS photo_videos ON messages(chat,id) WHERE ` + photoWhere + `;`)
 	if err == nil {
 		err = c.initSearch()
 	}
@@ -277,22 +279,32 @@ func (c *Cache) Delete(ctx context.Context, chat int64, ids []int) error {
 	return tx.Commit()
 }
 
-// Around reads a bounded window containing the logical anchor (or the latest page).
+// Around reads a bounded window containing the logical anchor (or the latest
+// page), within the anchor's span (or the newest): see Span.
 func (c *Cache) Around(ctx context.Context, chat int64, anchor int, limit int) ([]model.Message, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	low, high, ok, err := c.bounds(ctx, chat, anchor)
+	if err != nil || !ok {
+		return nil, err
+	}
 	var rows *sql.Rows
-	var err error
 	if anchor == 0 {
-		rows, err = c.db.QueryContext(ctx, `SELECT payload FROM (SELECT id,payload FROM messages WHERE chat=? AND deleted!=1 ORDER BY id DESC LIMIT ?) ORDER BY id`, chat, limit)
+		rows, err = c.db.QueryContext(ctx, `SELECT payload FROM (SELECT id,payload FROM messages WHERE chat=? AND deleted!=1 AND id>=? AND id<=? ORDER BY id DESC LIMIT ?) ORDER BY id`, chat, low, high, limit)
 	} else {
-		rows, err = c.db.QueryContext(ctx, `SELECT payload FROM (SELECT id,payload FROM (SELECT id,payload FROM messages WHERE chat=? AND deleted!=1 AND id<=? ORDER BY id DESC LIMIT ?) UNION ALL SELECT id,payload FROM (SELECT id,payload FROM messages WHERE chat=? AND deleted!=1 AND id>? ORDER BY id LIMIT ?)) ORDER BY id`, chat, anchor, limit/2, chat, anchor, limit/2)
+		rows, err = c.db.QueryContext(ctx, `SELECT payload FROM (SELECT id,payload FROM (SELECT id,payload FROM messages WHERE chat=? AND deleted!=1 AND id<=? AND id>=? ORDER BY id DESC LIMIT ?) UNION ALL SELECT id,payload FROM (SELECT id,payload FROM messages WHERE chat=? AND deleted!=1 AND id>? AND id<=? ORDER BY id LIMIT ?)) ORDER BY id`, chat, anchor, low, limit/2, chat, anchor, high, limit/2)
 	}
 	if err != nil {
 		return nil, err
 	}
+	return readMessages(rows)
+}
+
+// readMessages reads the payloads of rows, and closes them.
+func readMessages(rows *sql.Rows) ([]model.Message, error) {
 	defer rows.Close()
 	var out []model.Message
+	var err error
 	for rows.Next() {
 		var b []byte
 		if err = rows.Scan(&b); err != nil {
@@ -392,38 +404,34 @@ func (c *Cache) SaveMedia(ctx context.Context, key string, b []byte) error {
 }
 
 // Page reads adjacent cached messages without requiring a Telegram connection.
+// Page reads up to limit messages next to anchor, oldest first: before it
+// when dir is negative, after it otherwise; only from the anchor's span (see
+// Span), so a page never reaches across messages the cache lacks.
 func (c *Cache) Page(ctx context.Context, chat int64, anchor, dir, limit int) ([]model.Message, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	query := `SELECT payload FROM (SELECT id,payload FROM messages WHERE chat=? AND deleted!=1 AND id<? ORDER BY id DESC LIMIT ?) ORDER BY id`
-	if dir > 0 {
-		query = `SELECT payload FROM messages WHERE chat=? AND deleted!=1 AND id>? ORDER BY id LIMIT ?`
+	low, high, ok, e := c.bounds(ctx, chat, anchor)
+	if e != nil || !ok {
+		return nil, e
 	}
-	rows, e := c.db.QueryContext(ctx, query, chat, anchor, limit)
+	query := `SELECT payload FROM (SELECT id,payload FROM messages WHERE chat=? AND deleted!=1 AND id<? AND id>=? ORDER BY id DESC LIMIT ?) ORDER BY id`
+	bound := low
+	if dir > 0 {
+		query = `SELECT payload FROM messages WHERE chat=? AND deleted!=1 AND id>? AND id<=? ORDER BY id LIMIT ?`
+		bound = high
+	}
+	rows, e := c.db.QueryContext(ctx, query, chat, anchor, bound, limit)
 	if e != nil {
 		return nil, e
 	}
-	defer rows.Close()
-	var out []model.Message
-	for rows.Next() {
-		var b []byte
-		if e = rows.Scan(&b); e != nil {
-			return nil, e
-		}
-		var m model.Message
-		if e = json.Unmarshal(b, &m); e != nil {
-			return nil, e
-		}
-		out = append(out, m)
-	}
-	return out, rows.Err()
+	return readMessages(rows)
 }
 
-// photoWhere selects photo messages. Payloads are JSON stored as BLOBs,
+// photoWhere selects photos and videos. Payloads are JSON stored as BLOBs,
 // which SQLite would read as JSONB without the cast. The partial index above
 // uses the same expression, is built over existing rows when created, and is
 // what makes a gallery query cheap in a large chat.
-const photoWhere = `json_extract(CAST(payload AS TEXT),'$.Kind')=1`
+const photoWhere = `json_extract(CAST(payload AS TEXT),'$.Kind') IN (1,2)`
 
 // Photos reads a page of cached photo messages next to anchor, oldest
 // first: before it when dir is negative, after it otherwise.

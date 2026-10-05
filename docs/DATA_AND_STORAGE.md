@@ -269,6 +269,92 @@ budget, report the excess and defer optional cache writes rather than destroy
 protected data or spin on repeated cleanup. Enforcement should be incremental
 and coalesced, not a full-table sort after each streamed chunk.
 
+## Phase 0: inventory and measurements
+
+Done on Linux (container, ext4-like overlay); Windows was not measured.
+
+### Storage owners
+
+`<config>` and `<cache>` are `os.UserConfigDir()` and `os.UserCacheDir()`.
+
+| Root | Owner | What | Cache cleanup |
+|---|---|---|---|
+| `<config>/komarugram-go/accounts/<id>/history.db.plain` or `.secure` (+ `-journal`) | `historycache` | Messages, edits, deletion markers, spans, FTS, layouts, kv (viewports, update state), media BLOBs | Media rows only |
+| `<config>/komarugram-go/accounts/<id>/session.json` | `account` | Auth key | Never |
+| `<config>/komarugram-go/accounts.db`, `security.json`, `settings.json` | `account`, `security`, `preferences` | Registry, protection, settings | Never |
+| `<config>/komarugram-go/wallpapers/` | `preferences` | Wallpaper pictures | Own policy |
+| `<config>/komarugram-go/emoji/` | `emojipacks` | Installed emoji packs | Shared asset, own policy |
+| `<config>/komarugram-go/miniapp/` | `ui/webapp.go`, `pkg/miniapp` | Mini App browser profiles | Own policy |
+| `<cache>/komarugram-go/*.wasm` | `wasmmodule` | Fetched decoders | Re-fetchable, shared |
+| `<cache>/komarugram-go/locks/`, `crashes/`, `komarugram-go.sock` | `account`, `crash`, instance | Locks, crash reports, socket | Never / own policy |
+| temp `komarugram-go-attachments-*`, `komarugram-paste-*`, `komarugram-voice-*.ogg`, player sockets | `ui`, `pkg/player` | Working files of a send or playback | In use; not by prefix |
+| temp `sqlite-*.db` | `pkg/tdata` | Decrypted tdesktop database during import, removed after | Never |
+| Pictures, export/diagnostics directories | `ui`, `diagnostics` | What the user saved | Never |
+
+All media Telegram gives the client goes to one table, `media(key, data,
+used)`, through four writers in `tgstore`: whole files (`media.go`, key =
+media ID), streamed video ranges (`stream.go`, `<id>/range/<offset>`,
+128 KiB each), inline previews (`history.go`) and
+collection thumbnails (`collections.go`). No row says which chat, message or
+category it belongs to: the key is the only link, and a media ID can be
+reached from several messages. This is why phase 1 needs the object and
+reference tables; a scan of message JSON can attribute only part of it. The
+256 MiB budget in `SaveMedia` evicts by `used`, which is the write time.
+
+### Measurements
+
+`STORAGE_PROBE=1 go test ./internal/messenger/historycache -run
+TestStorageProbe -v` builds a synthetic cache in each mode: 100,000
+messages in 1,000 chats with their FTS index, then 400 media of 512 KiB
+(200 MiB, under the budget). Results:
+
+| | Plain | Adiantum |
+|---|---|---|
+| Messages + FTS, file | 58.4 MiB | 58.4 MiB |
+| Writing 100,000 messages (batches of 500) | 27.1 s | 27.8 s |
+| Writing 400 media | 15.9 s, slowest 92 ms | 41.0 s, slowest 253 ms |
+| With media, file | 257.7 MiB | 257.7 MiB |
+| `count, sum(length(data))` of media | 0.4 ms | 0.5 ms |
+| `sum(length(payload))` of messages | 50 ms | 82 ms |
+| Messages per chat, `GROUP BY chat` | 16 ms | 17 ms |
+
+`page_size` 4096, `journal_mode` delete, `auto_vacuum` NONE. Encryption adds
+nothing to the file size. `length()` of a BLOB does not read it, so totals
+of media from SQL are cheap; scanning message JSON is not. Go heap stays
+under 5 MiB throughout: SQLite's memory is the wasm module's, outside it.
+
+Compaction, the same in both modes (only times differ):
+
+| Step | File | Free pages | Time |
+|---|---|---|---|
+| Half the media deleted | 257.7 MiB | 100 MiB | |
+| `PRAGMA incremental_vacuum` | 257.7 MiB | 100 MiB | no-op with `auto_vacuum` NONE |
+| `PRAGMA auto_vacuum=INCREMENTAL; VACUUM` | 157.6 MiB | 0 | 2.5 s / 2.6 s |
+| Another quarter deleted | 157.6 MiB | 50 MiB | |
+| `incremental_vacuum(4096)` | 141.6 MiB | 34 MiB | 184 / 272 ms |
+| `incremental_vacuum` | 107.5 MiB | 0 | 338 / 567 ms |
+
+### Conclusions for phase 1 and 3
+
+- Deleting rows returns nothing to the OS; the existing databases need one
+  `VACUUM` to switch to `auto_vacuum=INCREMENTAL`. After that, bounded
+  `incremental_vacuum(N)` shrinks the file in short steps under the cache
+  lock, on Adiantum as on plaintext, in place, with no decrypted copy.
+- With `temp_store=memory` (set in `historycache` and `securedb`), `VACUUM`
+  builds the new database in the wasm module's memory: RSS grew by the
+  database's size (26 → 195 MiB) and stayed there until the connection was
+  closed (21 MiB after). With `temp_store=FILE` for the `VACUUM` alone,
+  RSS stayed at 29 MiB. Adiantum gives temporary files a random key
+  (`vfs/adiantum/hbsh.go`), so this writes nothing in plaintext. The
+  one-time `VACUUM` should use `FILE`, or reopen the connection after it.
+- `VACUUM` needs free disk space of about the database's size for the
+  temporary copy and journal (SQLite documentation; not measured here).
+- Media totals by SQL are fast enough to answer on demand; per-chat totals
+  need the reference table, not a JSON scan.
+- Not measured: 100,000 media rows and 10,000 chats (the budget caps media
+  at 256 MiB, so the row count depends on sizes), latency under concurrent
+  writes, Windows, allocated size vs file length.
+
 ## Delivery phases
 
 Each phase should be independently reviewable. Storage phases 0–5 are the main
@@ -352,5 +438,5 @@ references, not valid tdesktop language-pack keys.
 The storage milestone is complete when the user can inspect accurate scoped
 totals and chat/category detail offline, clear selected eligible cached data,
 understand the real disk-space result, and configure retention without losing
-their local message archive. This document itself was validated against source;
-no implementation, application run, rendering or cleanup was performed for it.
+their local message archive. Apart from phase 0's measurements, this
+document was validated against source only.

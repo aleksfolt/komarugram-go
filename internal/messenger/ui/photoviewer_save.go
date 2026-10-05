@@ -32,7 +32,7 @@ type viewerFile struct {
 // canKeep reports whether the photo m may be saved and copied: not when its
 // chat protects its content, as in Telegram Desktop.
 func canKeep(m model.Message) bool {
-	return !m.NoForwards && m.Media != nil
+	return !m.NoForwards && m.Media != nil && m.Kind == model.MessagePhoto
 }
 
 // keepPhoto saves the photo m in the user's pictures, or copies it, in the

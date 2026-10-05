@@ -10,6 +10,7 @@ import (
 
 	"komarugram/internal/appwindow"
 	"komarugram/internal/messenger/tgstore"
+	"komarugram/internal/messenger/ui"
 )
 
 // accountSession is the store and connection of one account, or of a window
@@ -27,6 +28,10 @@ type accountSession struct {
 	window atomic.Pointer[appwindow.Window]
 	// locked survives closing and recreating the window in the tray.
 	locked atomic.Bool
+	// app is the window's content while there is a window; openChat is a
+	// chat for the next window to open.
+	app      atomic.Pointer[ui.App]
+	openChat atomic.Int64
 	// hold keeps the process running while the session does.
 	hold    func()
 	running atomic.Bool

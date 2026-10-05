@@ -37,6 +37,7 @@ import (
 	"komarugram/internal/messenger/tgstore"
 	"komarugram/internal/messenger/ui"
 	"komarugram/internal/miniappprefs"
+	"komarugram/internal/notify"
 	"komarugram/internal/profilerui"
 	"komarugram/internal/tray"
 	"komarugram/pkg/miniapp"
@@ -55,6 +56,7 @@ func main() {
 	demo := flag.Bool("demo", false, "run on demo data instead of signing in")
 	demoChats := flag.Int("demo-chats", 0, "run on demo data with this many generated chats added")
 	demoPanic := flag.Bool("demo-panic", false, "show the recovered-panic dialog once on demo data")
+	demoNotify := flag.Duration("demo-notify", 0, "on demo data, receive a message this often, to try notifications")
 	var tdataPaths pathsFlag
 	flag.Var(&tdataPaths, "tdata", "import a Telegram Desktop tdata zip or every zip in a directory; may be repeated")
 	check := flag.Bool("check", false, "import/load accounts without windows, print counts and exit")
@@ -106,7 +108,7 @@ func main() {
 	if profiling && *check {
 		fail("-profile requires a window; cannot be combined with -check")
 	}
-	demoMode := *demo || *demoChats > 0 || *demoPanic
+	demoMode := *demo || *demoChats > 0 || *demoPanic || *demoNotify > 0
 	if demoMode && (*check || len(tdataPaths) > 0) {
 		fail("-demo runs without accounts; cannot be combined with -check or -tdata")
 	}
@@ -135,7 +137,7 @@ func main() {
 
 	if demoMode {
 		reportLastCrash(catalog)
-		runDemo(*demoChats, *profile, *profileDir, *demoPanic)
+		runDemo(*demoChats, *profile, *profileDir, *demoPanic, *demoNotify)
 		return
 	}
 	// A second start brings the running instance back from the tray.
@@ -210,10 +212,14 @@ func main() {
 		}
 	})
 	accounts := newAccountWindows(process, windowOptions(sharedPreferences), manager, protection, sharedPreferences, sharedMiniApps, imports)
+	balloon := &trayBalloon{}
+	notifier := notify.New(catalog.T("app.title"), balloon)
+	accounts.notifier = notifier
 	icon, err := tray.Start(tray.Options{
 		ID:       "komarugram-go",
 		Title:    catalog.T("app.title"),
 		Activate: accounts.ShowAll,
+		Notified: notifier.Clicked,
 		Items: []tray.Item{
 			{Label: catalog.T("tray.open"), Action: accounts.ShowAll},
 			{Separator: true},
@@ -226,8 +232,10 @@ func main() {
 	case !errors.Is(err, tray.ErrUnsupported):
 		log.Print(err)
 	}
+	balloon.icon.Store(icon)
 	flush := process.BeforeExit
 	process.BeforeExit = func() {
+		notifier.Close()
 		if icon != nil {
 			icon.Close()
 		}
@@ -258,18 +266,44 @@ func reportLastCrash(catalog localization.Catalog) {
 // runDemo shows demo data with settings kept in memory only: the demo
 // neither reads nor changes the user's settings, accounts or local-data
 // protection.
-func runDemo(chats int, profile bool, profileDir string, panicDemo bool) {
+func runDemo(chats int, profile bool, profileDir string, panicDemo bool, receive time.Duration) {
 	prefs := preferences.Memory()
 	process := newProcess(profile, profileDir, nil)
 	opts := windowOptions(prefs)
 	opts.ProfileName = "demo"
 	opts.DemoPanic = panicDemo
+	store := mockstore.New(time.Now(), chats)
+	var window atomic.Pointer[appwindow.Window]
+	var app atomic.Pointer[ui.App]
+	notifier := notify.New(localization.For(prefs.Global().Language).T("app.title"), nil)
+	store.SetNotices(func(n model.MessageNotice) {
+		chat := n.Chat.ID
+		showNotice(notifier, prefs.Global(), "demo", viewOf(app.Load(), false), n, func(token string) {
+			if a, w := app.Load(), window.Load(); a != nil && w != nil {
+				a.OpenChat(chat)
+				w.Activate(token)
+			}
+		})
+	})
+	if receive > 0 {
+		go func() {
+			for range time.Tick(receive) {
+				store.Receive()
+				if w := window.Load(); w != nil {
+					w.Invalidate()
+				}
+			}
+		}()
+	}
 	process.Open(appwindow.Spec{Options: opts, Build: func(w *appwindow.Window) appwindow.Content {
-		return ui.New(w, mockstore.New(time.Now(), chats), ui.Services{
+		content := ui.New(w, store, ui.Services{
 			Preferences: prefs,
 			MiniApps:    miniApps(prefs),
 			OpenWindow:  process.Open,
 		})
+		window.Store(w)
+		app.Store(content)
+		return content
 	}})
 	process.Main()
 }
@@ -422,4 +456,14 @@ func printSummary(store *tgstore.Store) {
 		}
 		fmt.Printf("folder %d: %d chats\n", i+1, n)
 	}
+}
+
+// trayBalloon shows notifications by the tray icon once there is one.
+type trayBalloon struct{ icon atomic.Pointer[tray.Tray] }
+
+func (b *trayBalloon) Notify(title, text string, sound bool) error {
+	if icon := b.icon.Load(); icon != nil {
+		return icon.Notify(title, text, sound)
+	}
+	return tray.ErrUnsupported
 }

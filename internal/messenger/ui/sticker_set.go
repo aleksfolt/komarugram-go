@@ -250,9 +250,9 @@ func (d *stickerSetDialog) layout(gtx layout.Context, p *chatPage, l localizatio
 	d.update(l)
 	if result := d.authorResult; result != nil {
 		d.authorResult = nil
-		if result.author != nil && result.err == nil && p.openAuthor != nil {
+		if result.author != nil && result.err == nil && p.openChat != nil {
 			d.modal.Close()
-			p.openAuthor(*result.author)
+			p.openChat(*result.author, 0)
 		} else {
 			text := strconv.FormatInt(result.authorID, 10)
 			gtx.Execute(clipboard.WriteCmd{Type: "application/text", Data: io.NopCloser(strings.NewReader(text))})
@@ -562,7 +562,7 @@ func (d *stickerSetDialog) item(gtx layout.Context, p *chatPage, item model.Pick
 func (d *stickerSetDialog) findAuthor(p *chatPage) {
 	id := d.pack.AuthorID
 	source, ok := p.source.(model.StickerSetAuthorSource)
-	if !ok || p.openAuthor == nil {
+	if !ok || p.openChat == nil {
 		d.authorResult = &stickerSetResult{authorID: id}
 		p.invalidate()
 		return

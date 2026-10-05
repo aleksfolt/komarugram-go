@@ -241,10 +241,10 @@ func (b *cappedFile) WriteAt(p []byte, off int64) (int, error) {
 	return len(p), nil
 }
 
-// ChatPhotos pages the server photo index; the local cache remains available offline.
+// ChatPhotos pages the chat's photos and videos; the local cache remains available offline.
 // A page of the cache tells no total, and has more photos when it is full.
 func (s *Store) ChatPhotos(ctx context.Context, chat int64, anchor model.MessageID, dir, limit int) (model.PhotoPage, error) {
-	page, err := s.searchMedia(ctx, chat, model.SharedPhotos, anchor, dir, limit)
+	page, err := s.searchMedia(ctx, chat, model.SharedPhotoVideos, anchor, dir, limit)
 	if err == nil {
 		sort.Slice(page.Messages, func(i, j int) bool { return page.Messages[i].Key.MessageID < page.Messages[j].Key.MessageID })
 		return model.PhotoPage{Messages: page.Messages, Total: page.Total, More: page.More}, nil

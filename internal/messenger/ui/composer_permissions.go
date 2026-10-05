@@ -140,8 +140,8 @@ func (c *messageComposer) layoutReadOnly(gtx layout.Context, p *chatPage, l loca
 			if result.from == c.chat {
 				if result.err != nil {
 					p.toast.Show(mediaErrorText(result.err))
-				} else if p.openAuthor != nil {
-					p.openAuthor(result.chat)
+				} else if p.openChat != nil {
+					p.openChat(result.chat, 0)
 				}
 			}
 		default:

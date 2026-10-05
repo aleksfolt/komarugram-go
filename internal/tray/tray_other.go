@@ -10,3 +10,5 @@ type Tray struct{}
 func Start(Options) (*Tray, error) { return nil, ErrUnsupported }
 func (*Tray) Available() bool      { return false }
 func (*Tray) Close()               {}
+
+func (*Tray) Notify(string, string, bool) error { return ErrUnsupported }

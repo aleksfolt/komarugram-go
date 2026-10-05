@@ -56,7 +56,13 @@ const (
 	wmApp           = 0x8000
 	trayMessage     = wmApp + 1
 	nimAdd          = 0
+	nimModify       = 1
 	nimDelete       = 2
+	nifInfo         = 0x10
+	niifUser        = 0x4
+	niifNoSound     = 0x10
+	niifQuietTime   = 0x80
+	ninBalloonClick = 0x405
 	nifMessage      = 0x1
 	nifIcon         = 0x2
 	nifTip          = 0x4
@@ -321,6 +327,29 @@ func (t *Tray) notifyData() notifyIconData {
 	return nid
 }
 
+// Notify shows a notification by the icon: a balloon, which Windows 10 and
+// later show as a toast. A new one takes the place of the last.
+func (t *Tray) Notify(title, text string, sound bool) error {
+	if !t.added.Load() {
+		return ErrUnsupported
+	}
+	nid := t.notifyData()
+	nid.Flags |= nifInfo
+	nid.InfoFlags = niifUser | niifQuietTime
+	if !sound {
+		nid.InfoFlags |= niifNoSound
+	}
+	nid.BalloonIcon = t.icon
+	t16, _ := windows.UTF16FromString(title)
+	copy(nid.InfoTitle[:len(nid.InfoTitle)-1], t16)
+	b16, _ := windows.UTF16FromString(text)
+	copy(nid.Info[:len(nid.Info)-1], b16)
+	if r, _, err := procShellNotifyIconW.Call(nimModify, uintptr(unsafe.Pointer(&nid))); r == 0 {
+		return fmt.Errorf("tray: notify: %w", err)
+	}
+	return nil
+}
+
 func (t *Tray) add() {
 	nid := t.notifyData()
 	r, _, _ := procShellNotifyIconW.Call(nimAdd, uintptr(unsafe.Pointer(&nid)))
@@ -338,6 +367,10 @@ func (t *Tray) wndProc(wnd uintptr, message uint32, wParam, lParam uintptr) uint
 			}
 		case wmRButtonUp:
 			t.showMenu()
+		case ninBalloonClick:
+			if t.opts.Notified != nil {
+				go t.opts.Notified("")
+			}
 		}
 		return 0
 	case message == t.taskbarCreated && message != 0:

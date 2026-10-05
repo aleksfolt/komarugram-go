@@ -121,6 +121,9 @@ func convertMessage(account string, m tg.MessageClass, names map[int64]string) (
 				entity.URL = e.URL
 			case *tg.MessageEntityMention:
 				entity.Kind = "mention"
+			case *tg.MessageEntityMentionName:
+				entity.Kind = "url"
+				entity.URL = fmt.Sprintf("tg://user?id=%d", e.UserID)
 			case *tg.MessageEntityCustomEmoji:
 				entity.Kind = "emoji"
 				entity.DocumentID = e.DocumentID

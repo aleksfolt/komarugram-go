@@ -181,9 +181,7 @@ func (s *Store) topicsRead(chat int64, res *tg.MessagesForumTopics, more bool) {
 			Closed: t.Closed, Pinned: t.Pinned, Unread: t.UnreadCount, Mentions: t.UnreadMentionsCount,
 		}
 		e.IconEmoji, _ = t.GetIconEmojiID()
-		if until, ok := t.NotifySettings.GetMuteUntil(); ok && time.Unix(int64(until), 0).After(time.Now()) {
-			e.Muted = true
-		}
+		e.Muted = mutedNow(t.NotifySettings)
 		if m, ok := messages[t.TopMessage]; ok {
 			e.LastMessage, e.LastTime = preview(m)
 			switch m := m.(type) {

@@ -14,11 +14,13 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/gotd/td/constant"
 	"github.com/gotd/td/tg"
 
+	"komarugram/internal/crash"
 	"komarugram/internal/messenger/model"
 )
 
@@ -35,6 +37,7 @@ type Store struct {
 	picker  pickerCache
 	themes  themeCatalogue
 	changed func()
+	notices atomic.Pointer[func(model.MessageNotice)]
 	history *conversation
 
 	themeRevisions map[int64]uint64
@@ -61,6 +64,8 @@ type Store struct {
 	ghost         ghostState
 	blocked       blockedState
 	bots          botState
+	// dialogsLoading: loadDialogs runs.
+	dialogsLoading atomic.Bool
 }
 
 // New returns an empty store that calls changed whenever Load has read more.
@@ -111,15 +116,49 @@ func (s *Store) Load(ctx context.Context, api *tg.Client) error {
 		s.me.DC = s.dc
 	})
 	s.loadAppConfig(ctx, api, self.Premium)
+	return s.loadDialogs(ctx, api, self.ID)
+}
 
+// reloadDialogs reads the folders and dialogs again, after updates were
+// missed (too long): their unread counts and last messages are old. It
+// does nothing before Load, or while a load runs.
+func (s *Store) reloadDialogs() {
+	c := s.history
+	c.mu.Lock()
+	api, ctx := c.api, c.ctx
+	c.mu.Unlock()
+	s.mu.RLock()
+	self := s.me.ID
+	s.mu.RUnlock()
+	if api == nil || self == 0 {
+		return
+	}
+	go func() {
+		defer crash.Recover("dialogs reload", nil)
+		_ = s.loadDialogs(ctx, api, self)
+	}()
+}
+
+// loadDialogs reads the folders and every dialog of the main list, and
+// then the histories open: see resync. One runs at a time.
+func (s *Store) loadDialogs(ctx context.Context, api *tg.Client, self int64) error {
+	if !s.dialogsLoading.CompareAndSwap(false, true) {
+		return nil
+	}
+	defer s.dialogsLoading.Store(false)
 	filters, err := api.MessagesGetDialogFilters(ctx)
 	if err != nil {
 		return fmt.Errorf("tgstore: folders: %w", err)
 	}
 
-	l := newList(self.ID)
+	l := newList(self)
 	offset := page{peer: &tg.InputPeerEmpty{}}
 	for {
+		// A gap in the updates while the page is asked for leaves its
+		// chats as they are.
+		s.history.mu.Lock()
+		liveEpoch := s.history.liveEpoch
+		s.history.mu.Unlock()
 		res, err := api.MessagesGetDialogs(ctx, &tg.MessagesGetDialogsRequest{
 			OffsetDate: offset.date,
 			OffsetID:   offset.id,
@@ -135,12 +174,17 @@ func (s *Store) Load(ctx context.Context, api *tg.Client) error {
 		}
 		s.rememberPeers(dialogs.GetUsers(), dialogs.GetChats())
 		s.history.mu.Lock()
+		tops := map[int64]int{}
 		for _, d := range dialogs.GetDialogs() {
 			if d, ok := d.(*tg.Dialog); ok {
 				s.history.top[peerID(d.Peer)] = max(s.history.top[peerID(d.Peer)], d.TopMessage)
+				tops[peerID(d.Peer)] = d.TopMessage
 			}
 		}
 		s.history.mu.Unlock()
+		if err := s.liveFromDialogs(ctx, tops, liveEpoch); err != nil {
+			return err
+		}
 		added := l.add(dialogs)
 		chats, folders := l.snapshot(filters.Filters)
 		s.publish(func() { s.chats, s.folders = chats, folders })
@@ -165,7 +209,7 @@ func (s *Store) Load(ctx context.Context, api *tg.Client) error {
 	if err := s.persistDialogs(ctx); err != nil {
 		return err
 	}
-	s.refreshOpen()
+	s.resync(0)
 	return nil
 }
 
@@ -318,9 +362,7 @@ func (l *list) chat(d *tg.Dialog) (model.Chat, entry) {
 		Unread: d.UnreadCount,
 		Pinned: d.Pinned,
 	}
-	if until, ok := d.NotifySettings.GetMuteUntil(); ok && time.Unix(int64(until), 0).After(time.Now()) {
-		chat.Muted = true
-	}
+	chat.Muted = mutedNow(d.NotifySettings)
 	if d.Pinned {
 		l.pins++
 		chat.PinRank = l.pins
@@ -600,4 +642,29 @@ func (l *list) folder(f tg.DialogFilterClass, entries map[int64]entry) (model.Fo
 		}, true
 	}
 	return model.Folder{}, false // the "All chats" entry
+}
+
+// liveFromDialogs marks live the chats whose newest span reaches the newest
+// message the dialog list names (tops), read at liveEpoch: the messages
+// that come after it come as updates. See conversation.live.
+func (s *Store) liveFromDialogs(ctx context.Context, tops map[int64]int, liveEpoch uint64) error {
+	c := s.history
+	c.mu.Lock()
+	cache := c.cache
+	c.mu.Unlock()
+	if cache == nil {
+		return nil
+	}
+	for chat, top := range tops {
+		span, ok, _, err := cache.SpanOf(ctx, chat, 0)
+		if err != nil {
+			return err
+		}
+		if ok && span.High >= top {
+			c.mu.Lock()
+			c.startLive(chat, liveEpoch)
+			c.mu.Unlock()
+		}
+	}
+	return nil
 }

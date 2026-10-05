@@ -99,6 +99,8 @@ func (p *chatPage) mediaTile(gtx layout.Context, r *messageRow, m model.Message,
 			p.play(gtx, m, p.reportMedia, l)
 		} else if m.Kind == model.MessagePhoto && p.openPhoto != nil {
 			p.openPhoto(m)
+		} else if m.Kind == model.MessageGIF && p.openAlone != nil && err == nil && !cancelled && !loading {
+			p.openAlone(m)
 		} else if err != nil || cancelled {
 			p.media.Retry(target)
 		} else if stickerSet {

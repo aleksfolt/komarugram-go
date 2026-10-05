@@ -28,5 +28,8 @@ type Options struct {
 	// Wayland, token is the XDG activation token that lets the application
 	// raise a window; it is empty where there is none.
 	Activate func(token string)
+	// Notified runs on a goroutine of its own when the notification Notify
+	// showed last is clicked.
+	Notified func(token string)
 	Items    []Item
 }

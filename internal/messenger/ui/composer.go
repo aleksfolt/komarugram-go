@@ -159,6 +159,9 @@ type messageComposer struct {
 	voiceResults          chan voiceResult
 	voicePicks            chan voicePick
 	recorded              map[string]bool
+	paste                 struct{}
+	pasted                map[string]bool
+	uploading             map[string]bool
 	micClick, voiceCancel surface
 	// ffmpeg is the FFmpeg the user set, "" for the one on PATH.
 	ffmpeg func() string
@@ -166,7 +169,7 @@ type messageComposer struct {
 
 func newMessageComposer(source model.ConversationStore, invalidate func()) *messageComposer {
 	ctx, cancel := context.WithCancel(context.Background())
-	c := &messageComposer{invalidate: invalidate, ctx: ctx, cancel: cancel, drafts: map[int64]*messageDraft{}, results: make(chan pickerResult, 8), featuredResults: make(chan featuredPackResult, 8), sends: make(chan composerResult, 8), fileResults: make(chan fileChoice, 1), files: newFilesBox(), chooser: chooseFiles, voice: ffmpegVoice, voiceResults: make(chan voiceResult, 2), voicePicks: make(chan voicePick, 1), recorded: map[string]bool{}, packClicks: map[int64]*surface{}, itemClicks: map[string]*surface{}}
+	c := &messageComposer{invalidate: invalidate, ctx: ctx, cancel: cancel, drafts: map[int64]*messageDraft{}, results: make(chan pickerResult, 8), featuredResults: make(chan featuredPackResult, 8), sends: make(chan composerResult, 8), fileResults: make(chan fileChoice, 1), files: newFilesBox(), chooser: chooseFiles, voice: ffmpegVoice, voiceResults: make(chan voiceResult, 2), voicePicks: make(chan voicePick, 1), recorded: map[string]bool{}, pasted: map[string]bool{}, uploading: map[string]bool{}, packClicks: map[int64]*surface{}, itemClicks: map[string]*surface{}}
 	c.source, _ = source.(model.ComposerStore)
 	c.muted = map[int64]bool{}
 	c.discussions = make(chan discussionResult, 2)
@@ -321,6 +324,21 @@ func (c *messageComposer) submitText() {
 	}
 	c.submit(c.chat, model.OutgoingMessage{Text: d.editor.Text(), Entities: append([]model.Entity(nil), d.entities...)})
 }
+
+func (c *messageComposer) textChanged(d *messageDraft) {
+	next := d.editor.Text()
+	if next == d.text {
+		return
+	}
+	d.entities = shiftEmojiEntities(d.text, next, d.entities)
+	d.text = next
+	d.pending = nil
+	d.err = nil
+	if g, ok := c.source.(model.GhostStore); ok && strings.TrimSpace(next) != "" {
+		g.Typing(c.chat)
+	}
+}
+
 func (c *messageComposer) update(gtx layout.Context, chat int64, l localization.Catalog) {
 	if c.chat != chat {
 		c.cancelFeatured()
@@ -358,6 +376,9 @@ func (c *messageComposer) update(gtx layout.Context, chat int64, l localization.
 				d.pending = nil
 				if d.reply != nil && r.request.ReplyTo == d.reply.Key.MessageID {
 					d.reply = nil
+				}
+				if r.request.Files != nil {
+					c.forgetPasted(r.request.Files.Paths)
 				}
 				if c.recorded[r.request.Path] {
 					delete(c.recorded, r.request.Path)
@@ -476,6 +497,7 @@ drained:
 	}
 
 	if !d.sending && permissions.Allows(model.SendText) {
+		c.updatePaste(gtx, d)
 		for {
 			ev, ok := d.editor.Update(gtx)
 			if !ok {
@@ -485,17 +507,7 @@ drained:
 			case widget.SubmitEvent:
 				c.submitText()
 			case widget.ChangeEvent:
-				next := d.editor.Text()
-				if next == d.text {
-					continue
-				}
-				d.entities = shiftEmojiEntities(d.text, next, d.entities)
-				d.text = next
-				d.pending = nil
-				d.err = nil
-				if g, ok := c.source.(model.GhostStore); ok && strings.TrimSpace(next) != "" {
-					g.Typing(c.chat)
-				}
+				c.textChanged(d)
 			}
 		}
 	}

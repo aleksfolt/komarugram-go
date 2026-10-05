@@ -126,7 +126,7 @@ func (s *Store) ChatPhotos(ctx context.Context, chat int64, anchor model.Message
 	var photos []model.Message
 	total := 0
 	for _, m := range s.History(chat).Messages {
-		if m.Kind != model.MessagePhoto || m.Media == nil {
+		if m.Kind != model.MessagePhoto && m.Kind != model.MessageVideo || m.Media == nil {
 			continue
 		}
 		total++

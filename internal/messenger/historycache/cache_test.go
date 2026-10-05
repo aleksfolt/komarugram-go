@@ -233,8 +233,10 @@ func TestPhotosPageAroundAnchorWithIndex(t *testing.T) {
 			m.Kind, m.Media = model.MessagePhoto, &model.MessageMedia{ID: fmt.Sprint("p", i)}
 		}
 		if i == 6 {
-			m.Kind = model.MessageVideo // not a photo, even with media
-			m.Media = &model.MessageMedia{ID: "v"}
+			m.Kind, m.Media = model.MessageVideo, &model.MessageMedia{ID: "v"}
+		}
+		if i == 10 {
+			m.Kind, m.Media = model.MessageGIF, &model.MessageMedia{ID: "g"}
 		}
 		msgs = append(msgs, m)
 	}
@@ -246,7 +248,7 @@ func TestPhotosPageAroundAnchorWithIndex(t *testing.T) {
 		t.Fatal(e)
 	}
 	// A cache created before the index gets it, over its rows, when opened.
-	if _, e = c.db.Exec(`DROP INDEX photos`); e != nil {
+	if _, e = c.db.Exec(`DROP INDEX photo_videos`); e != nil {
 		t.Fatal(e)
 	}
 	c.Close()
@@ -260,8 +262,11 @@ func TestPhotosPageAroundAnchorWithIndex(t *testing.T) {
 		}
 		return
 	}
+	if all, _ := c.Photos(ctx, 9, 0, 1, 100); fmt.Sprint(ids(all)) != "[4 6 8 12 20 24 28 32 36 40]" {
+		t.Fatalf("photos and videos: %v", ids(all))
+	}
 	older, e := c.Photos(ctx, 9, 24, -1, 3)
-	// 16 is deleted, 6 is a video and chat 10 is another chat.
+	// 16 is deleted, 10 is a GIF and chat 10 is another chat.
 	if e != nil || fmt.Sprint(ids(older)) != "[8 12 20]" {
 		t.Fatalf("older: %v %v", ids(older), e)
 	}
@@ -281,7 +286,7 @@ func TestPhotosPageAroundAnchorWithIndex(t *testing.T) {
 		plan += detail + "\n"
 	}
 	rows.Close()
-	if !strings.Contains(plan, "photos") {
+	if !strings.Contains(plan, "photo_videos") {
 		t.Fatalf("gallery query does not use the photo index:\n%s", plan)
 	}
 }

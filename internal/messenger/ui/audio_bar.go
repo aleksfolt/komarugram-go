@@ -461,8 +461,9 @@ func (s *volumeSlider) layout(gtx layout.Context, size image.Point, volume float
 }
 
 // layoutAudioBar draws the bar across the top of gtx, and the volume
-// slider under its button, over the page.
-func (p *chatPage) layoutAudioBar(gtx layout.Context, l localization.Catalog) {
+// slider under its button, over the page. away is set over a page that is
+// not the chat's: a click on the bar opens the chat at the message.
+func (p *chatPage) layoutAudioBar(gtx layout.Context, l localization.Catalog, away bool) {
 	b := &p.audioBar
 	if b.play == nil {
 		b.previous, b.play, b.next = button.Text(), button.Text(), button.Text()
@@ -495,8 +496,13 @@ func (p *chatPage) layoutAudioBar(gtx layout.Context, l localization.Catalog) {
 	if volume, changed, keep := b.slider.update(gtx, panel, p.audio.loudness()); changed || keep {
 		p.audio.setVolume(volume, keep)
 	}
-	if b.bar.Clicked(gtx) && p.audio.shownIn() == p.chat {
-		p.jumpTo(m.Key.MessageID)
+	if b.bar.Clicked(gtx) {
+		switch {
+		case away && p.openAudio != nil:
+			p.openAudio(m)
+		case !away && p.audio.shownIn() == p.chat:
+			p.jumpTo(m.Key.MessageID)
+		}
 	}
 	// What a click changed is drawn in this frame.
 	m, state, speed, ok = p.audio.current()

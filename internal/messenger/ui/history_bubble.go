@@ -214,6 +214,11 @@ func (p *chatPage) row(gtx layout.Context, m model.Message, date bool, join bubb
 						if p.unwrapped(m) {
 							return p.unwrappedBody(gtx, r, m, join, l, animate)
 						}
+						if len(m.Buttons) > 0 {
+							return p.withKeyboard(gtx, r, m, join, l, func(gtx layout.Context) layout.Dimensions {
+								return p.bubble(gtx, r, m, join, l, animate)
+							})
+						}
 						return p.bubble(gtx, r, m, join, l, animate)
 					})
 					r.bodySize = bodyDims.Size
@@ -337,40 +342,6 @@ func (p *chatPage) bubbleContent(gtx layout.Context, r *messageRow, m model.Mess
 				return label(gtx, p.serviceText(m, l), token.TypestyleBodyMedium, sc.Surface.OnColor, 0)
 			}
 			return label(gtx, l.T("history.empty_message"), token.TypestyleBodyMedium, sc.SurfaceVariant.OnColor, 0)
-		}))
-	}
-	for y, row := range m.Buttons {
-		children = append(children, vspace(6), layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			var cells []layout.FlexChild
-			for x, b := range row {
-				cells = append(cells, layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-					switch b.Kind {
-					case "url":
-						if r.buttons[y][x].Clicked(gtx) {
-							p.askLink(b.URL)
-						}
-						return textButton(gtx, &r.buttons[y][x], b.Text+" ↗")
-					case "webview", "simple_webview":
-						if r.buttons[y][x].Clicked(gtx) {
-							p.pressWebView(gtx, p.chat, m, b)
-						}
-						return textButton(gtx, &r.buttons[y][x], b.Text)
-					case "callback", "copy":
-						if r.buttons[y][x].Clicked(gtx) {
-							p.pressButton(gtx, m, y, x, b, l)
-						}
-						text := b.Text
-						if b.Kind == "callback" && p.pending(m.Key, y, x) {
-							text += " …"
-						}
-						return textButton(gtx, &r.buttons[y][x], text)
-					}
-					return layout.UniformInset(7).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-						return label(gtx, b.Text+" · "+l.T("history.readonly"), token.TypestyleLabelMedium, sc.SurfaceVariant.OnColor, 2)
-					})
-				}))
-			}
-			return layout.Flex{}.Layout(gtx, cells...)
 		}))
 	}
 	if len(m.Reactions) > 0 {

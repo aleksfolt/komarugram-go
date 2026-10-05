@@ -4,6 +4,7 @@ package ui
 
 import (
 	"image"
+	"komarugram/internal/messenger/model"
 	"math"
 	"testing"
 	"time"
@@ -30,13 +31,14 @@ type barHarness struct {
 	p      *chatPage
 	router input.Router
 	now    time.Time
+	away   bool
 }
 
 func (h *barHarness) frame() {
 	ops := new(op.Ops)
 	gtx := layout.Context{Ops: ops, Source: h.router.Source(), Now: h.now, Constraints: layout.Exact(image.Pt(600, 400)), Metric: unit.Metric{PxPerDp: 1, PxPerSp: 1}, Values: map[string]any{}}
 	wdk.InitMaterialThemeInContext(gtx, defaults.NewTheme(gtx, schemes.SchemeBaselineLight()))
-	h.p.layoutAudioBar(gtx, localization.For("en"))
+	h.p.layoutAudioBar(gtx, localization.For("en"), h.away)
 	h.router.Frame(ops)
 }
 
@@ -185,4 +187,27 @@ func TestAudioBarVolume(t *testing.T) {
 func (h *barHarness) drag(x, y float32) {
 	h.router.Queue(pointer.Event{Kind: pointer.Move, Source: pointer.Mouse, Buttons: pointer.ButtonPrimary, Position: f32.Pt(x, y)})
 	h.frame()
+}
+
+// Over a page that is not the chat's, a click on the bar opens the chat at
+// what plays; over the chat it scrolls there.
+func TestAudioBarAwayOpensTheChat(t *testing.T) {
+	p, _, find := audioHarnessPage(t)
+	voice := find("demo/voice")
+	p.chat = 2
+	var opened []model.MessageKey
+	p.openAudio = func(m model.Message) { opened = append(opened, m.Key) }
+	h := &barHarness{p: p, now: time.Now(), away: true}
+	p.audio.toggle(p, voice, -1)
+	waitAudio(t, "it did not start", func() bool { return p.audio.state(voice).playing })
+	h.frame()
+	h.click(300, 24)
+	if len(opened) != 1 || opened[0] != voice.Key {
+		t.Fatalf("opened %v", opened)
+	}
+	h.away = false
+	h.click(300, 24)
+	if len(opened) != 1 {
+		t.Fatalf("over the chat the bar opened %v", opened)
+	}
 }
