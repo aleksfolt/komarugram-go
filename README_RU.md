@@ -120,6 +120,7 @@ KomaruGram Go может быть портирован на множество �
 | [ncruces/go-sqlite3-wasm](https://github.com/ncruces/go-sqlite3-wasm) | MIT-0; SQLite внутри — общественное достояние |
 | [lukechampine.com/adiantum](https://github.com/lukechampine/adiantum) | MIT |
 | [go-text/typesetting](https://github.com/go-text/typesetting) | Unlicense OR BSD-3-Clause |
+| [dlclark/regexp2](https://github.com/dlclark/regexp2) | MIT |
 | [godbus/dbus](https://github.com/godbus/dbus) | BSD-2-Clause |
 | [google/go-tpm](https://github.com/google/go-tpm) | Apache-2.0 |
 | [coder/websocket](https://github.com/coder/websocket) | ISC |
@@ -145,6 +146,7 @@ KomaruGram Go может быть портирован на множество �
 | `pkg/drdec/drdec.wasm`: [dr_libs](https://github.com/mackron/dr_libs) (dr_mp3, dr_flac, dr_wav; `pkg/drdec/LICENSE.dr_libs`) | Unlicense OR MIT-0 |
 | `pkg/lottie/tlottie.wasm`: [tlottie](https://github.com/dkaraush/tlottie) и стандартная библиотека Rust | MIT; MIT OR Apache-2.0 |
 | WASI libc и compiler-rt внутри модулей выше ([wasi-sdk](https://github.com/WebAssembly/wasi-sdk)) | MIT, Apache-2.0 WITH LLVM-exception |
+| `pkg/prism/grammars.dat.gz`: грамматики [Prism.js](https://prismjs.com) 1.29.0 вместе с `pkg/prism`, портом токенизатора [libprisma](https://github.com/desktop-app/libprisma) (`pkg/prism/LICENSE.prism`) | MIT |
 | `pkg/miniapp/assets/telegram-web-app.js`: SDK Mini Apps от Telegram | © Telegram, лицензия не указана |
 | `avcdec.wasm`, загружается во время работы: H.264-декодер FFmpeg ([libavcodec-wasm](https://github.com/komarugif/libavcodec-wasm)) | LGPL-2.1-or-later |
 | `aacdec.wasm`, загружается во время работы: декодер Fraunhofer FDK AAC ([fdk-aac-wasm](https://github.com/komarugif/fdk-aac-wasm)) | Лицензия Fraunhofer FDK AAC, без патентных прав |

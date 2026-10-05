@@ -32,6 +32,8 @@ type messageTextBlock struct {
 	expanded              bool
 	height                heightTransition
 	maxLines              int
+	// code is a code block's colors.
+	code codeHighlight
 }
 
 func (r *messageRow) prepareTextBlocks() {

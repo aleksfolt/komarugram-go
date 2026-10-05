@@ -1,8 +1,9 @@
 # Rich text, Markdown and LaTeX
 
 Status: implementation started, 2026-10-04. The first part of stage 0
-(code and quote blocks) and stage 1 (reading rich messages, 2026-10-05)
-are implemented; see "Implementation progress" below.
+(code and quote blocks), stage 1 (reading rich messages, 2026-10-05) and
+stage 4a (code highlighting, 2026-10-05) are implemented; see
+"Implementation progress" below.
 The research notes gather what Telegram sends, how Telegram Desktop shows
 it, what KomaruGram has, and a
 measured comparison of the libraries the work needs: a Markdown parser
@@ -1080,9 +1081,9 @@ are not in this plan.
 
 Remaining in stage 0: clickable hashtags, bot commands, email, phone
 and formatted dates. Mentions by ID came with the link handling merged
-from NaixROOT's fork (see below). Stage 1 is done (below); the shared
-article engine and drawing the page in the bubble remain stages 2–3.
-RaTeX, highlighting, Markdown and Instant View remain later stages.
+from NaixROOT's fork (see below). Stages 1 and 4a are done (below); the
+shared article engine and drawing the page in the bubble remain stages
+2–3. RaTeX, Markdown and Instant View remain later stages.
 
 ### Focused validation
 
@@ -1218,6 +1219,76 @@ article kept offline is replaced only by the next load, not by an edit;
 file references of the page's media renew only through the history's
 existing paths; formatted dates and the new entity kinds are drawn as
 plain text; `textImage` stays `[image]`, as in tdesktop.
+
+### Stage 4a: code highlighting
+
+2026-10-05. The one new direct dependency is regexp2 v1.12.0, as decided;
+it was in `go.mod` already, indirect.
+
+- **Grammars** (`pkg/prism/generate`). A copy of libprisma's
+  `generate.js` (`desktop-app/libprisma` at `31a5d6f`, 2026-09-29) with the
+  two changes above: `\uFFFF` stays, and no language is left out. It
+  writes `pkg/prism/grammars.dat.gz`: 663,696 bytes, 209,457 gzipped, 404
+  language names. `package-lock.json` pins Prism.js 1.29.0; run it with
+  `npm ci` (or `bun install --frozen-lockfile`) and `node generate.js`.
+  Unchanged, it reproduced libprisma's `grammars.dat` byte for byte under
+  Node 18.
+- **libprisma changed since the research:** its generator now normalizes
+  escapes for Java's engine and writes non-ASCII characters as `\u`
+  escapes, those beyond the BMP as surrogate pairs; `UnicodeEscapes.h`
+  turns them into UTF-8 bytes for Boost. It still narrows `\uFFFF` and
+  leaves the nine languages out. `pkg/prism` joins a surrogate pair into
+  its character when it loads a pattern, since regexp2 matches runes and
+  has no other escape for it in ECMAScript mode; that fixes BQN's `𝕨`.
+- **Tokenizer** (`pkg/prism`): `matchGrammar`, the token list, lookbehind
+  and greedy matching line by line as libprisma has them, matching over
+  runes, with spans in bytes. As in libprisma, a match searches what
+  follows its start as if the text began there, grammars nest at most 32
+  deep, and a failed match keeps the tokens found. Added: a match timeout
+  (`Embedded(matchTimeout)`) and a deadline checked before every match.
+  `Load` checks every index of a `grammars.dat`; a corrupt one is an
+  error.
+- **Checked:**
+  - against Prism.js 1.29.0 on its own 2,574 tests (`tests/languages`,
+    LF line ends): 2,562 the same. The 12 others are the generator's
+    losses: HTML's `<!DOCTYPE>`, parts of `maxscript`, `mermaid`, `stata`
+    and `uri`;
+  - with libprisma's own `grammars.dat`, against native libprisma (Boost.Regex
+    1.92): the same on every ASCII test, and on 12 real files of up to
+    139 KB (Go, JavaScript, HTML, CSS, shell, JSON). Nine tests with
+    non-ASCII text differ, where Boost matches bytes;
+  - `pkg/prism`'s tests: 17 samples against Prism.js's own tokens
+    (`testdata/prismjs.json`, written by `generate/expected.js`), spans
+    covering invalid UTF-8, each bound stopping `aaaa…` as TypeScript on
+    its own (checked with the deadline removed), concurrent use, corrupt
+    data, and `FuzzLoad` (30 s, nothing found).
+- **Service** (`internal/messenger/codehighlight`): Telegram Desktop's
+  queue and cache. One goroutine for the process, an LRU of 256 blocks, a
+  window redrawn when its block's colors come. 50 ms per match and 250 ms
+  per block. The grammars are loaded at the first block and let go after
+  two minutes without one: 1.4 MB of heap loaded, 2.4 MB after eight
+  languages, nothing once let go. Departures from tdesktop:
+  - a token whose type has no color takes its alias's (a doc-comment is
+    a comment);
+  - names Prism does not know map to ones it does: tdesktop's `diff` and
+    `patch` to `git`, and `c++`, `hpp`, `h`, `c#`, `golang`, `rs`, `zsh`,
+    `ps1`, `1c`, `asm`, `proto`, `vue`, `svelte`, `delphi`, `pl`, `fs`,
+    `ex`, `erl`, `clj`, `ml`, `gql`, `make`, `jsonc` and `console`.
+- **Drawing** (`ui/code_colors.go`, `textFlow`): only a `pre` with a
+  language is colored, as in tdesktop. Its runs are cut where the color
+  changes, each piece still mapped to its run, so selection, copying,
+  links and spoilers are unchanged (`TestCodeBlockColorsKeepSelection`,
+  checked with the cutting removed). Telegram Desktop's eight classes,
+  with colors of our own for light and dark (`codePalettes`), after
+  Telegram for Android's groups. `CODE_COLORS_PNG_DIR` renders them.
+- **Live:** `@richtextdemobot`'s "Code & Pre" shows its PHP, Python and
+  JavaScript blocks colored; the block without a language stays plain.
+- **Size:** the stripped messenger grew by 723,968 bytes with stages 1 and
+  4a together, 209,457 of them the grammars.
+
+Left: the `.md` viewer and the article engine use the same service when
+they come. A `.` in a pattern matches `\r` in regexp2 and not in Prism.js,
+so CRLF text may differ; Prism's tests were compared with LF only.
 
 ### Fork work merged into main
 

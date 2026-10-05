@@ -107,6 +107,16 @@ TestRenderTextBlocks` draws both themes, narrow/wide and collapsed/expanded.
 `go run ./cmd/render-all -only text-blocks /tmp/text-blocks` runs the same
 scenes. The live demo includes the same example at the end of each history.
 
+A code block with a language is colored (`code_colors.go`): its text goes
+to `internal/messenger/codehighlight`, which tokenizes it with Prism's
+grammars on a goroutine of its own and redraws the window when the colors
+come; until then it is plain. Its runs are cut into spans where the color
+changes, each still mapped to its run, so selection, links and spoilers
+work as before. The eight colors, in `codePalettes`, are the theme's for
+light and dark. `CODE_COLORS_PNG_DIR=/tmp/code go test
+./internal/messenger/ui -run TestRenderCodeColors` (`render-all -only
+code-colors`) draws JavaScript, Python, HTML and a diff in both themes.
+
 ### Height transitions (`height.go`)
 
 A view owns a `heightTransition`. `Value` moves from the displayed height

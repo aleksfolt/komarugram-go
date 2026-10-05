@@ -13,6 +13,7 @@ import (
 
 	"komarugram/internal/diagnostics"
 	"komarugram/internal/messenger/chatmedia"
+	"komarugram/internal/messenger/codehighlight"
 	"komarugram/internal/messenger/fonts"
 	"komarugram/internal/messenger/localization"
 	"komarugram/internal/messenger/model"
@@ -869,9 +870,36 @@ func (p *chatPage) textFlow(gtx layout.Context, r *messageRow, block *messageTex
 			styleIndices = append(styleIndices, i)
 		}
 	}
+	// A code block's runs are cut where its colors change; flowRuns maps
+	// each span of the flow back to its run.
+	var colors []codehighlight.Span
+	if runs[0].Pre {
+		colors = p.codeSpans(r, block)
+	}
 	flowStyles := make([]styledtext.SpanStyle, 0, len(styleIndices))
+	flowRuns := make([]int, 0, len(styleIndices))
+	base := 0
+	runBase := make([]int, len(runs))
+	for i, run := range runs {
+		runBase[i] = base
+		base += len(run.Text)
+	}
 	for _, i := range styleIndices {
-		flowStyles = append(flowStyles, styles[i])
+		st := styles[i]
+		if len(colors) == 0 || st.Color.A == 0 || runs[i].URL != "" || st.Content != runs[i].Text {
+			flowStyles = append(flowStyles, st)
+			flowRuns = append(flowRuns, i)
+			continue
+		}
+		for _, piece := range codePieces(st.Content, runBase[i], colors) {
+			ps := st
+			ps.Content = st.Content[piece.start:piece.end]
+			if piece.class != codehighlight.Plain {
+				ps.Color = codeColor(gtx, piece.class)
+			}
+			flowStyles = append(flowStyles, ps)
+			flowRuns = append(flowRuns, i)
+		}
 	}
 	text := styledtext.Text(theme.TextShaper, flowStyles...)
 	if runs[0].Pre {
@@ -880,7 +908,7 @@ func (p *chatPage) textFlow(gtx layout.Context, r *messageRow, block *messageTex
 	text.Clusters = &block.clusters
 	text.MaxLines = block.maxLines
 	text.Decorate = func(gtx layout.Context, f styledtext.Fragment, draw func()) {
-		i := styleIndices[f.Index]
+		i := flowRuns[f.Index]
 		f.Index = i + block.first
 		f.Bounds = f.Bounds.Add(origin)
 		for j := range f.Clusters {

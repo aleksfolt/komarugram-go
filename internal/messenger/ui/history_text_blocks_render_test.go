@@ -17,8 +17,10 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf16"
 
 	"gioui.org/layout"
+	"komarugram/internal/messenger/codehighlight"
 	"komarugram/internal/messenger/localization"
 	"komarugram/internal/messenger/mockstore"
 	"komarugram/internal/messenger/model"
@@ -34,6 +36,7 @@ func TestRenderTextBlocks(t *testing.T) {
 	}
 	checkTextAfterBitmap(t, filepath.Join(dir, "text-bitmap-tail.png"))
 	text, entities := mockstore.TextBlocksExample()
+	waitCodeColors(t, model.TextRuns(text, entities))
 	for _, dark := range []bool{false, true} {
 		for _, width := range []int{360, 640} {
 			for _, expanded := range []bool{false, true} {
@@ -57,6 +60,77 @@ func TestRenderTextBlocks(t *testing.T) {
 				})
 				p.Close()
 			}
+		}
+	}
+}
+
+// TestRenderCodeColors draws code in several languages, every class of
+// color among them, in both themes, for looking at the palettes:
+//
+//	CODE_COLORS_PNG_DIR=/tmp/code go test ./internal/messenger/ui -run RenderCodeColors
+func TestRenderCodeColors(t *testing.T) {
+	dir := os.Getenv("CODE_COLORS_PNG_DIR")
+	if dir == "" {
+		t.Skip("set CODE_COLORS_PNG_DIR to a directory")
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	blocks := [][2]string{
+		{"javascript", "/** Greets. */\nclass Greeter extends Base {\n  greet(name = 'мир') {\n    return `Привет, ${name}!` + 42; // done\n  }\n}"},
+		{"python", "@cache\ndef area(r: float) -> float:\n    \"\"\"Area of a circle.\"\"\"\n    return 3.14 * r ** 2  # approx"},
+		{"html", "<!-- note -->\n<a href=\"/x\" class=\"b\">&amp; link</a>"},
+		{"diff", "@@ -1,2 +1,2 @@\n-old line\n+new line\n context"},
+	}
+	var text strings.Builder
+	var entities []model.Entity
+	for _, b := range blocks {
+		text.WriteString(b[0] + ":\n")
+		start := len(utf16.Encode([]rune(text.String())))
+		text.WriteString(b[1])
+		entities = append(entities, model.Entity{Kind: "pre", Offset: start, Length: len(utf16.Encode([]rune(b[1]))), Language: b[0]})
+		text.WriteString("\n")
+	}
+	runs := model.TextRuns(text.String(), entities)
+	waitCodeColors(t, runs)
+	for _, dark := range []bool{false, true} {
+		p := newChatPage(benchmarkHistory{}, func() {})
+		p.images = &imageOps{}
+		m := model.Message{Key: model.MessageKey{MessageID: 1}, Text: text.String(), Entities: entities, Date: time.Date(2026, 10, 5, 12, 30, 0, 0, time.UTC), ContentRevision: 1}
+		p.rows = map[model.MessageID]*messageRow{1: {revision: 1, runs: runs}}
+		renderToast(t, filepath.Join(dir, fmt.Sprintf("code-colors-dark-%t.png", dark)), image.Pt(640, 900), dark, func(gtx layout.Context) {
+			p.images.BeginFrame()
+			layout.UniformInset(12).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				gtx.Constraints.Min = image.Point{}
+				return p.row(gtx, m, false, 0, localization.For("ru"), false)
+			})
+			p.images.EndFrame()
+		})
+		p.Close()
+	}
+}
+
+// waitCodeColors colors the code blocks of runs, so that a render shows
+// them as they are once their colors came.
+func waitCodeColors(t *testing.T, runs []model.TextRun) {
+	t.Helper()
+	r := &messageRow{runs: runs}
+	r.prepareTextBlocks()
+	for _, b := range r.textBlocks {
+		run := r.runs[b.first]
+		if !run.Pre || run.Language == "" {
+			continue
+		}
+		var text strings.Builder
+		for _, run := range r.runs[b.first:b.end] {
+			text.WriteString(run.Text)
+		}
+		done := make(chan struct{})
+		codehighlight.Request(codehighlight.KeyOf(run.Language, text.String()), run.Language, text.String(), func() { close(done) })
+		select {
+		case <-done:
+		case <-time.After(10 * time.Second):
+			t.Fatal("no colors for the code")
 		}
 	}
 }

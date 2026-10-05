@@ -119,6 +119,7 @@ The Go modules linked into `messenger` and `kitchen`, as `go version -m` lists t
 | [ncruces/go-sqlite3-wasm](https://github.com/ncruces/go-sqlite3-wasm) | MIT-0; SQLite inside it is public domain |
 | [lukechampine.com/adiantum](https://github.com/lukechampine/adiantum) | MIT |
 | [go-text/typesetting](https://github.com/go-text/typesetting) | Unlicense OR BSD-3-Clause |
+| [dlclark/regexp2](https://github.com/dlclark/regexp2) | MIT |
 | [godbus/dbus](https://github.com/godbus/dbus) | BSD-2-Clause |
 | [google/go-tpm](https://github.com/google/go-tpm) | Apache-2.0 |
 | [coder/websocket](https://github.com/coder/websocket) | ISC |
@@ -144,6 +145,7 @@ Embedded and downloaded files:
 | `pkg/drdec/drdec.wasm`: [dr_libs](https://github.com/mackron/dr_libs) (dr_mp3, dr_flac, dr_wav; `pkg/drdec/LICENSE.dr_libs`) | Unlicense OR MIT-0 |
 | `pkg/lottie/tlottie.wasm`: [tlottie](https://github.com/dkaraush/tlottie) and the Rust standard library | MIT; MIT OR Apache-2.0 |
 | WASI libc and compiler-rt inside the modules above ([wasi-sdk](https://github.com/WebAssembly/wasi-sdk)) | MIT, Apache-2.0 WITH LLVM-exception |
+| `pkg/prism/grammars.dat.gz`: [Prism.js](https://prismjs.com) 1.29.0's grammars, with `pkg/prism`, a port of [libprisma](https://github.com/desktop-app/libprisma)'s tokenizer (`pkg/prism/LICENSE.prism`) | MIT |
 | `pkg/miniapp/assets/telegram-web-app.js`: Telegram's Mini App SDK | © Telegram, no license stated |
 | `avcdec.wasm`, downloaded at run time: FFmpeg's H.264 decoder ([libavcodec-wasm](https://github.com/komarugif/libavcodec-wasm)) | LGPL-2.1-or-later |
 | `aacdec.wasm`, downloaded at run time: the Fraunhofer FDK AAC decoder ([fdk-aac-wasm](https://github.com/komarugif/fdk-aac-wasm)) | Fraunhofer FDK AAC license, no patent grant |
