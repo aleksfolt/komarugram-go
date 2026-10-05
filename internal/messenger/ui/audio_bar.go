@@ -261,7 +261,10 @@ func (v *audioPlayer) toggleMute() {
 // is, the speed of what changes its speed, the volume, and a button that
 // ends it. A click on it goes to the message, in the chat it is in.
 type audioBar struct {
-	height               heightTransition
+	height heightTransition
+	// shown is what the bar told last: while it closes, it is drawn as it
+	// was, and takes no input.
+	shown                *audioShown
 	bar                  surface
 	previous, play, next *button.Button
 	speed, volume, close *button.Button
@@ -269,6 +272,16 @@ type audioBar struct {
 	// pointer is over the button or over it, and a little longer, as
 	// Telegram Desktop's is.
 	slider volumeSlider
+}
+
+// audioShown is what the bar of what plays tells: the message, what the
+// player tells of it, the speed, whether there are tracks around it, and
+// the volume.
+type audioShown struct {
+	m             model.Message
+	state         audioState
+	speed, volume float64
+	before, after bool
 }
 
 // volumeSlider is the vertical slider of the player's volume.
@@ -298,6 +311,11 @@ const (
 	volumePanelPad    = unit.Dp(12)
 )
 
+// volumePanel is the size of the volume slider's panel.
+func volumePanel(gtx layout.Context) image.Point {
+	return image.Pt(gtx.Dp(volumePanelWidth), gtx.Dp(volumeTrackHeight)+2*gtx.Dp(volumePanelPad))
+}
+
 // volumeIcon is the icon of the volume button, as in Telegram Desktop:
 // silent, below two thirds, and above.
 func volumeIcon(volume float64) wdk.IconWidget {
@@ -314,10 +332,58 @@ func volumeIcon(volume float64) wdk.IconWidget {
 // nothing plays.
 func (p *chatPage) audioBarSize(gtx layout.Context) int {
 	target := 0
-	if _, _, _, ok := p.audio.current(); ok && (p.audioExternal == nil || !p.audioExternal()) {
+	if p.audioBarLive() {
 		target = gtx.Dp(audioBarHeight)
 	}
-	return p.audioBar.height.Value(gtx, target, true)
+	h := p.audioBar.height.Value(gtx, target, true)
+	if h == 0 {
+		p.audioBar.shown = nil
+	}
+	return h
+}
+
+// audioBarLive reports whether the bar tells of what plays now: something
+// plays or loads, and not in a player of its own.
+func (p *chatPage) audioBarLive() bool {
+	_, _, _, ok := p.audio.current()
+	return ok && (p.audioExternal == nil || !p.audioExternal())
+}
+
+// audioBarInput handles the clicks on the bar of what plays and on its
+// volume slider.
+func (p *chatPage) audioBarInput(gtx layout.Context, away bool) {
+	b := &p.audioBar
+	if b.close.Clicked(gtx) {
+		p.audio.stop()
+		return
+	}
+	m, _, _, _ := p.audio.current()
+	before, after := p.audio.around()
+	switch {
+	case b.previous.Clicked(gtx) && before:
+		p.audio.skip(-1)
+	case b.next.Clicked(gtx) && after:
+		p.audio.skip(1)
+	case b.play.Clicked(gtx):
+		p.audio.toggle(p, m, -1)
+	}
+	if b.speed.Clicked(gtx) {
+		p.audio.nextSpeed()
+	}
+	if b.volume.Clicked(gtx) {
+		p.audio.toggleMute()
+	}
+	if volume, changed, keep := b.slider.update(gtx, volumePanel(gtx), p.audio.loudness()); changed || keep {
+		p.audio.setVolume(volume, keep)
+	}
+	if b.bar.Clicked(gtx) {
+		switch {
+		case away && p.openAudio != nil:
+			p.openAudio(m)
+		case !away && p.audio.shownIn() == p.chat:
+			p.jumpTo(m.Key.MessageID)
+		}
+	}
 }
 
 // audioTitle is what the bar tells of m in two lines: a voice message's
@@ -471,56 +537,33 @@ func (p *chatPage) layoutAudioBar(gtx layout.Context, l localization.Catalog, aw
 		b.previous, b.play, b.next = button.Text(), button.Text(), button.Text()
 		b.speed, b.volume, b.close = button.Text(), button.Text(), button.Text()
 	}
-	m, state, speed, ok := p.audio.current()
-	if !ok {
-		return
-	}
-	if b.close.Clicked(gtx) {
-		p.audio.stop()
-		return
-	}
-	before, after := p.audio.around()
-	switch {
-	case b.previous.Clicked(gtx) && before:
-		p.audio.skip(-1)
-	case b.next.Clicked(gtx) && after:
-		p.audio.skip(1)
-	case b.play.Clicked(gtx):
-		p.audio.toggle(p, m, -1)
-	}
-	if b.speed.Clicked(gtx) {
-		p.audio.nextSpeed()
-	}
-	if b.volume.Clicked(gtx) {
-		p.audio.toggleMute()
-	}
-	panel := image.Pt(gtx.Dp(volumePanelWidth), gtx.Dp(volumeTrackHeight)+2*gtx.Dp(volumePanelPad))
-	if volume, changed, keep := b.slider.update(gtx, panel, p.audio.loudness()); changed || keep {
-		p.audio.setVolume(volume, keep)
-	}
-	if b.bar.Clicked(gtx) {
-		switch {
-		case away && p.openAudio != nil:
-			p.openAudio(m)
-		case !away && p.audio.shownIn() == p.chat:
-			p.jumpTo(m.Key.MessageID)
-		}
+	if p.audioBarLive() {
+		p.audioBarInput(gtx, away)
 	}
 	// What a click changed is drawn in this frame.
-	m, state, speed, ok = p.audio.current()
-	if !ok {
+	live := p.audioBarLive()
+	if live {
+		m, state, speed, _ := p.audio.current()
+		before, after := p.audio.around()
+		b.shown = &audioShown{m: m, state: state, speed: speed, volume: p.audio.loudness(), before: before, after: after}
+	}
+	height := p.audioBarSize(gtx)
+	if b.shown == nil {
 		return
 	}
-	before, after = p.audio.around()
-	volume := p.audio.loudness()
-	if state.playing || state.loading {
+	if !live {
+		gtx = gtx.Disabled()
+	}
+	m, state, speed, volume := b.shown.m, b.shown.state, b.shown.speed, b.shown.volume
+	before, after := b.shown.before, b.shown.after
+	if live && (state.playing || state.loading) {
 		// The line of what was heard moves while it plays.
 		gtx.Execute(op.InvalidateCmd{At: gtx.Now.Add(100 * time.Millisecond)})
 	}
 
 	sc := scheme(gtx)
 	size := image.Pt(gtx.Constraints.Max.X, gtx.Dp(audioBarHeight))
-	barClip := clip.Rect(image.Rect(0, 0, size.X, p.audioBarSize(gtx))).Push(gtx.Ops)
+	barClip := clip.Rect(image.Rect(0, 0, size.X, height)).Push(gtx.Ops)
 	fillRect(gtx, sc.Surface.Color, size)
 	gtx.Constraints = layout.Exact(size)
 	b.bar.Layout(gtx, size, surfaceStyle{content: sc.Surface.OnColor}, func(gtx layout.Context) layout.Dimensions {
@@ -619,7 +662,8 @@ func (p *chatPage) layoutAudioBar(gtx layout.Context, l localization.Catalog, aw
 		return layout.Dimensions{}
 	})
 	barClip.Pop()
-	if b.slider.visible(gtx, b.volume.Hovered(gtx)) {
+	if live && b.slider.visible(gtx, b.volume.Hovered(gtx)) {
+		panel := volumePanel(gtx)
 		// Under its button, touching the bar, so that the pointer gets
 		// from one to the other without leaving both.
 		offset(gtx, image.Pt(volumeX+(square-panel.X)/2, size.Y), func(gtx layout.Context) layout.Dimensions {
