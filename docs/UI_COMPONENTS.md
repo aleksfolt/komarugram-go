@@ -95,15 +95,47 @@ The history is drawn as materialgram draws it:
 
 `chatPage.richText` groups `model.TextRuns` into inline flows and `pre`/quote
 blocks, retaining source rune offsets for selection across them. The block
-plate uses theme colors, and its copy/expand action uses `surface` and
-`textButton`. Collapsed quotes pass `MaxLines: 3` to `styledtext`; hidden
-lines have no hit regions. Code wraps by graphemes. Source newlines beside
+plate uses theme colors. Code copying uses a compact `ContentContentCopy` icon button; a collapsed quote
+reserves a 24 dp right gutter with a 16 dp expand/collapse icon on `surface`,
+without a footer row. Quotes animate their height; while contracting they
+keep the full text behind a moving clip. Selection fragments and clusters
+are clipped too, so hidden lines have no hit regions. Code wraps by graphemes. Source newlines beside
 blocks remain in copied text without adding empty lines to the layout.
 
 `TEXT_BLOCKS_PNG_DIR=/tmp/text-blocks go test ./internal/messenger/ui -run
 TestRenderTextBlocks` draws both themes, narrow/wide and collapsed/expanded.
 `go run ./cmd/render-all -only text-blocks /tmp/text-blocks` runs the same
 scenes. The live demo includes the same example at the end of each history.
+
+### Height transitions (`height.go`)
+
+A view owns a `heightTransition`. `Value` moves from the displayed height
+when a target changes or reverses; `Card` measures once, paints the shared
+card background at the animated size and clips both drawing and input.
+First layout, width changes and disabled animations snap to the target.
+Transitions use `token.DurationMedium2` and `token.EasingStandard`.
+
+The disclosure audit covers code quotes, open context menus (including
+expanded reactions), modal cards, settings cards (logout confirmation,
+privacy/security, fonts, emoji, appearance and integrations), profile editing,
+login/lock forms, chat-info cards, reply strips, bot reply keyboards and the
+player's height reservation. These views keep independent height state;
+`modal.Card` resets with its dialog. Fixed-size pickers and attachment forms
+retain their existing entrance/exit transition and now also animate changes
+to an open panel's height. Menu backdrop sampling follows the displayed
+origin so blur does not slide independently of the panel. Cursor menus use
+`contextMenu.Place`: choose a side only on opening, then clamp growth to
+the window edge instead of flipping the whole menu across the pointer.
+A viewport resize snaps both menu position and height and finishes any
+entrance in progress; it does not retarget the content animation each frame.
+
+Use `heightTransition.Card` for a stateful card whose contents change height;
+plain `card` remains suitable for static or virtualized list items. Keep
+source data until a closing strip has reached zero height and disable its
+controls as it closes. Avoid animating normal window resizing. The Gio blur capture is aligned to
+the deepest downsampling grid so moving the whole capture, as when a menu
+grows upward, does not change the blur sampling phase. The older clip- and
+size-stability fixes remain in place.
 
 ## Messenger views worth copying
 

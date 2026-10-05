@@ -37,6 +37,7 @@ func TestTextBlocksSelectionCopyAndCollapse(t *testing.T) {
 	if pre == nil || q == nil {
 		t.Fatal("pre and quote were not laid out as blocks")
 	}
+	h.animate = false
 	collapsed := h.row.text.size.Y
 	visibleEnd := func() int {
 		end := 0

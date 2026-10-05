@@ -506,7 +506,7 @@ func (p *chatPage) layoutHistory(gtx layout.Context, c model.Chat, l localizatio
 	}
 	p.historyWidth = size.X
 	theme := uint32(sc.Surface.Color.AsNRGBA().R)<<16 | uint32(sc.Surface.Color.AsNRGBA().G)<<8 | uint32(sc.Surface.Color.AsNRGBA().B)
-	env := model.RenderEnvironment{WidthPx: size.X, ScaleMilli: int(gtx.Metric.PxPerDp * 1000), TextScaleMilli: int(gtx.Metric.PxPerSp * 1000), Locale: string(l.Language()), FontRevision: fonts.Revision(), ThemeRevision: theme, RendererRevision: 12}
+	env := model.RenderEnvironment{WidthPx: size.X, ScaleMilli: int(gtx.Metric.PxPerDp * 1000), TextScaleMilli: int(gtx.Metric.PxPerSp * 1000), Locale: string(l.Language()), FontRevision: fonts.Revision(), ThemeRevision: theme, RendererRevision: 14}
 	if p.trace != nil {
 		p.trace.History.Environment = fmt.Sprintf("width:%d dp:%d sp:%d locale:%s font:%d theme:%x renderer:%d", env.WidthPx, env.ScaleMilli, env.TextScaleMilli, env.Locale, env.FontRevision, env.ThemeRevision, env.RendererRevision)
 	}
@@ -878,9 +878,7 @@ func (p *chatPage) textFlow(gtx layout.Context, r *messageRow, block *messageTex
 		text.WrapPolicy = styledtext.WrapGraphemes
 	}
 	text.Clusters = &block.clusters
-	if runs[0].Quote && runs[0].Collapsed && !block.expanded {
-		text.MaxLines = 3
-	}
+	text.MaxLines = block.maxLines
 	text.Decorate = func(gtx layout.Context, f styledtext.Fragment, draw func()) {
 		i := styleIndices[f.Index]
 		f.Index = i + block.first
@@ -973,7 +971,7 @@ func (p *chatPage) linkDialog(gtx layout.Context, l localization.Catalog) {
 	}
 	shown := p.linkModal.Layout(gtx, false, func(gtx layout.Context) layout.Dimensions {
 		gtx.Constraints.Max.X = min(gtx.Constraints.Max.X, gtx.Dp(480))
-		return card(gtx, func(gtx layout.Context) layout.Dimensions {
+		return p.linkModal.Card(gtx, func(gtx layout.Context) layout.Dimensions {
 			return layout.Flex{Axis: layout.Vertical}.Layout(gtx, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 				return label(gtx, l.T("history.external"), token.TypestyleTitleMedium, scheme(gtx).Surface.OnColor, 2)
 			}), vspace(12), layout.Rigid(func(gtx layout.Context) layout.Dimensions {

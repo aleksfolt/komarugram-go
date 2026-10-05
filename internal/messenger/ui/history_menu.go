@@ -117,6 +117,7 @@ func (p *chatPage) openMenu(gtx layout.Context, pos f32.Point, top int) {
 	}
 	msg := p.messages[i]
 	m.open, m.id, m.top = true, msg.Key.MessageID, top
+	m.menu = contextMenu{}
 	m.reactions.expanded = false
 	m.at = image.Pt(int(pos.X), int(pos.Y)+top)
 	m.packs.start(p, msg)
@@ -476,7 +477,7 @@ func (p *chatPage) menuLayout(gtx layout.Context, l localization.Catalog) {
 			m.shown = p.menuActions(msg)
 			m.reactions.shown = p.menuReactions(msg)
 			m.reactedOf = msg.Reactions
-			m.rect, m.corner = menuRect(gtx, m.at, size, m.shown, m.reactions.height(gtx))
+			m.rect, m.corner = menuRect(gtx, &m.menu, m.at, size, m.shown, m.reactions.height(gtx))
 		}
 	}
 	if m.open {
@@ -495,11 +496,12 @@ func (p *chatPage) menuLayout(gtx layout.Context, l localization.Catalog) {
 		sc := scheme(gtx)
 		menuSize := gtx.Constraints.Max
 		defer clip.UniformRRect(image.Rectangle{Max: menuSize}, radius).Push(gtx.Ops).Pop()
-		overlayFill(gtx, p.menuBackdrop(), menuSize, m.rect.Min, sc.SurfaceContainerHigh, radius)
+		overlayFill(gtx, p.menuBackdrop(), menuSize, m.menu.bounds.Min, sc.SurfaceContainerHigh, radius)
 		event.Op(gtx.Ops, &m.panel)
 		y := gtx.Dp(menuPadding)
-		if strip := m.reactions.height(gtx); strip > 0 {
-			m.reactions.layout(gtx, p, menuSize.X, p.animate)
+		if targetStrip := m.reactions.height(gtx); targetStrip > 0 {
+			strip := max(0, targetStrip+menuSize.Y-m.rect.Dy())
+			m.reactions.layoutHeight(gtx, p, menuSize.X, strip, p.animate)
 			y = strip
 		}
 		for _, a := range shown {
@@ -543,7 +545,7 @@ func (p *chatPage) menuLayout(gtx layout.Context, l localization.Catalog) {
 // menuRect is where a menu with actions, under a strip of reactions strip
 // high, opens from at in a page of size: below and after it, or on the sides
 // where there is room.
-func menuRect(gtx layout.Context, at, size image.Point, actions []menuAction, strip int) (image.Rectangle, menuCorner) {
+func menuRect(gtx layout.Context, menu *contextMenu, at, size image.Point, actions []menuAction, strip int) (image.Rectangle, menuCorner) {
 	margin := gtx.Dp(8)
 	w := min(gtx.Dp(menuWidth), max(0, size.X-2*margin))
 	h := 2*gtx.Dp(menuPadding) + strip
@@ -559,21 +561,7 @@ func menuRect(gtx layout.Context, at, size image.Point, actions []menuAction, st
 		}
 	}
 	h = min(h, max(0, size.Y-2*margin))
-	x, y, corner := at.X, at.Y, menuFromTopLeft
-	if x+w > size.X-margin {
-		x, corner = x-w, menuFromTopRight
-	}
-	if y+h > size.Y-margin {
-		y = y - h
-		if corner == menuFromTopLeft {
-			corner = menuFromBottomLeft
-		} else {
-			corner = menuFromBottomRight
-		}
-	}
-	x = max(margin, min(x, size.X-margin-w))
-	y = max(margin, min(y, size.Y-margin-h))
-	return image.Rect(x, y, x+w, y+h), corner
+	return menu.Place(gtx, at, size, image.Pt(w, h))
 }
 
 // customEmojiSource is a store that finds custom emoji documents, and so

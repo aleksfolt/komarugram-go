@@ -13,6 +13,7 @@ import (
 	"komarugram/internal/messenger/styledtext"
 
 	"gio-mw/token"
+	"gio-mw/wdk"
 	"gioui.org/io/clipboard"
 	"gioui.org/io/pointer"
 	"gioui.org/layout"
@@ -29,6 +30,8 @@ type messageTextBlock struct {
 	clusters              []styledtext.Cluster
 	action                surface
 	expanded              bool
+	height                heightTransition
+	maxLines              int
 }
 
 func (r *messageRow) prepareTextBlocks() {
@@ -127,6 +130,9 @@ func (p *chatPage) textBlock(gtx layout.Context, r *messageRow, b *messageTextBl
 	if run.Block == 0 {
 		return p.textFlow(gtx, r, b, origin, animate)
 	}
+	if run.Quote {
+		return p.quoteBlock(gtx, r, b, origin, l, animate)
+	}
 	pad := min(gtx.Dp(10), gtx.Constraints.Max.X/2)
 	inner := gtx
 	inner.Constraints.Max.X = max(1, gtx.Constraints.Max.X-2*pad)
@@ -142,7 +148,8 @@ func (p *chatPage) textBlock(gtx layout.Context, r *messageRow, b *messageTextBl
 				if r.noCopy {
 					return layout.Dimensions{}
 				}
-				return textButton(gtx, &b.action, l.T("text.copy_code"))
+				size := min(gtx.Dp(24), gtx.Constraints.Max.X)
+				return compactTextIcon(gtx, &b.action, image.Pt(size, gtx.Dp(24)), iconCopy, l.T("text.copy_code"))
 			}))
 		stack.Pop()
 		pos.Y += header.Size.Y + gtx.Dp(4)
@@ -151,22 +158,9 @@ func (p *chatPage) textBlock(gtx layout.Context, r *messageRow, b *messageTextBl
 	dims := p.textFlow(inner, r, b, origin.Add(pos), animate)
 	stack.Pop()
 	pos.Y += dims.Size.Y
-	if run.Quote && run.Collapsed {
-		stack := op.Offset(pos).Push(gtx.Ops)
-		key := "text.expand_quote"
-		if b.expanded {
-			key = "text.collapse_quote"
-		}
-		button := textButton(inner, &b.action, l.T(key))
-		stack.Pop()
-		pos.Y += button.Size.Y
-	}
 	size := image.Pt(gtx.Constraints.Max.X, pos.Y+gtx.Dp(6))
 	call := macro.Stop()
 	fillRounded(gtx, scheme(gtx).SurfaceVariant.Color.SetOpacity(.55), size, gtx.Dp(6))
-	if run.Quote {
-		paint.FillShape(gtx.Ops, scheme(gtx).Primary.Color.AsNRGBA(), clip.UniformRRect(image.Rect(0, 0, min(size.X, gtx.Dp(3)), size.Y), gtx.Dp(1)).Op(gtx.Ops))
-	}
 	call.Add(gtx.Ops)
 	return layout.Dimensions{Size: size}
 }
@@ -186,4 +180,89 @@ func codeLanguageLabel(language string) string {
 		}
 	}
 	return strings.TrimSpace(out.String())
+}
+
+// quoteBlock reserves only a narrow right gutter for the disclosure icon.
+// While shrinking, keep drawing the full text through the moving clip.
+func (p *chatPage) quoteBlock(gtx layout.Context, r *messageRow, b *messageTextBlock, origin image.Point, l localization.Catalog, animate bool) layout.Dimensions {
+	run := r.runs[b.first]
+	pad := min(gtx.Dp(10), gtx.Constraints.Max.X/2)
+	top := gtx.Dp(6)
+	cell := 0
+	if run.Collapsed {
+		cell = min(gtx.Dp(24), max(0, gtx.Constraints.Max.X-2*pad))
+	}
+	inner := gtx
+	inner.Constraints.Max.X = max(1, gtx.Constraints.Max.X-2*pad-cell)
+	pos := image.Pt(pad, top)
+	first := len(r.text.fragments)
+	draw := func(limit int) (op.CallOp, layout.Dimensions) {
+		b.maxLines = limit
+		r.text.fragments = r.text.fragments[:first]
+		macro := op.Record(gtx.Ops)
+		stack := op.Offset(pos).Push(gtx.Ops)
+		dims := p.textFlow(inner, r, b, origin.Add(pos), animate)
+		stack.Pop()
+		return macro.Stop(), dims
+	}
+	limit := 0
+	if run.Collapsed && !b.expanded {
+		limit = 3
+	}
+	call, dims := draw(limit)
+	target := dims.Size.Y + 2*top
+	size := image.Pt(gtx.Constraints.Max.X, b.height.Value(gtx, target, animate))
+	if size.Y > target && limit > 0 {
+		call, _ = draw(0)
+	}
+	visible := image.Rect(pad, top, max(pad, size.X-pad-cell), max(top, size.Y-top)).Add(origin)
+	clipTextFragments(&r.text, first, visible)
+	fillRounded(gtx, scheme(gtx).SurfaceVariant.Color.SetOpacity(.55), size, gtx.Dp(6))
+	paint.FillShape(gtx.Ops, scheme(gtx).Primary.Color.AsNRGBA(), clip.UniformRRect(image.Rect(0, 0, min(size.X, gtx.Dp(3)), size.Y), gtx.Dp(1)).Op(gtx.Ops))
+	area := clip.Rect(visible.Sub(origin)).Push(gtx.Ops)
+	call.Add(gtx.Ops)
+	area.Pop()
+	if cell > 0 {
+		at := image.Pt(size.X-pad-cell, max(0, size.Y-top-cell))
+		offset(gtx, at, func(gtx layout.Context) layout.Dimensions {
+			key, icon := "text.expand_quote", iconExpandMore
+			if b.expanded {
+				key, icon = "text.collapse_quote", iconExpandLess
+			}
+			return compactTextIcon(gtx, &b.action, image.Pt(cell, cell), icon, l.T(key))
+		})
+	}
+	return layout.Dimensions{Size: size}
+}
+
+func compactTextIcon(gtx layout.Context, action *surface, size image.Point, icon wdk.IconWidget, label string) layout.Dimensions {
+	col := scheme(gtx).Primary.Color
+	return action.Layout(gtx, size, surfaceStyle{radius: gtx.Dp(4), background: col.SetOpacity(0), content: col, button: label}, func(gtx layout.Context) layout.Dimensions {
+		px := min(gtx.Dp(16), size.X, size.Y)
+		return offset(gtx, size.Sub(image.Pt(px, px)).Div(2), func(gtx layout.Context) layout.Dimensions {
+			return exact(gtx, image.Pt(px, px), func(gtx layout.Context) layout.Dimensions { return icon(gtx, col) })
+		})
+	})
+}
+
+// Text selection uses model coordinates, not Gio's pointer clip. Prune it
+// too so a hidden link or spoiler cannot be hit through the remaining area.
+func clipTextFragments(text *textInteraction, first int, visible image.Rectangle) {
+	fragments := text.fragments[first:]
+	text.fragments = text.fragments[:first]
+	for _, f := range fragments {
+		f.Bounds = f.Bounds.Intersect(visible)
+		if f.Bounds.Empty() {
+			continue
+		}
+		clusters := f.Clusters[:0]
+		for _, c := range f.Clusters {
+			c.Bounds = c.Bounds.Intersect(visible)
+			if !c.Bounds.Empty() {
+				clusters = append(clusters, c)
+			}
+		}
+		f.Clusters = clusters
+		text.fragments = append(text.fragments, f)
+	}
 }

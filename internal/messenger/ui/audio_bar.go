@@ -261,6 +261,7 @@ func (v *audioPlayer) toggleMute() {
 // is, the speed of what changes its speed, the volume, and a button that
 // ends it. A click on it goes to the message, in the chat it is in.
 type audioBar struct {
+	height               heightTransition
 	bar                  surface
 	previous, play, next *button.Button
 	speed, volume, close *button.Button
@@ -312,10 +313,11 @@ func volumeIcon(volume float64) wdk.IconWidget {
 // audioBarSize is how much of the page's top the bar takes: nothing while
 // nothing plays.
 func (p *chatPage) audioBarSize(gtx layout.Context) int {
-	if _, _, _, ok := p.audio.current(); !ok || p.audioExternal != nil && p.audioExternal() {
-		return 0
+	target := 0
+	if _, _, _, ok := p.audio.current(); ok && (p.audioExternal == nil || !p.audioExternal()) {
+		target = gtx.Dp(audioBarHeight)
 	}
-	return gtx.Dp(audioBarHeight)
+	return p.audioBar.height.Value(gtx, target, true)
 }
 
 // audioTitle is what the bar tells of m in two lines: a voice message's
@@ -518,6 +520,7 @@ func (p *chatPage) layoutAudioBar(gtx layout.Context, l localization.Catalog, aw
 
 	sc := scheme(gtx)
 	size := image.Pt(gtx.Constraints.Max.X, gtx.Dp(audioBarHeight))
+	barClip := clip.Rect(image.Rect(0, 0, size.X, p.audioBarSize(gtx))).Push(gtx.Ops)
 	fillRect(gtx, sc.Surface.Color, size)
 	gtx.Constraints = layout.Exact(size)
 	b.bar.Layout(gtx, size, surfaceStyle{content: sc.Surface.OnColor}, func(gtx layout.Context) layout.Dimensions {
@@ -615,6 +618,7 @@ func (p *chatPage) layoutAudioBar(gtx layout.Context, l localization.Catalog, aw
 		fillRect(gtx, sc.Primary.Color, image.Pt(int(state.progress*float32(size.X)), line))
 		return layout.Dimensions{}
 	})
+	barClip.Pop()
 	if b.slider.visible(gtx, b.volume.Hovered(gtx)) {
 		// Under its button, touching the bar, so that the pointer gets
 		// from one to the other without leaving both.

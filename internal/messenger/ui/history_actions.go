@@ -313,7 +313,7 @@ func (p *chatPage) forwardDialog(gtx layout.Context, l localization.Catalog) {
 		width := min(gtx.Constraints.Max.X, gtx.Dp(420))
 		height := min(gtx.Constraints.Max.Y-gtx.Dp(48), gtx.Dp(560))
 		gtx.Constraints = layout.Exact(image.Pt(width, max(height, 0)))
-		return card(gtx, func(gtx layout.Context) layout.Dimensions {
+		return f.modal.Card(gtx, func(gtx layout.Context) layout.Dimensions {
 			gtx.Constraints.Min = gtx.Constraints.Max
 			return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {

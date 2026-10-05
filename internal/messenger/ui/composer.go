@@ -871,7 +871,7 @@ func (c *messageComposer) Layout(gtx layout.Context, chat int64, l localization.
 		drawn := false
 		c.pickerMenu.Layout(gtx, c.pickerOpen, area, menuFromBottomRight, gtx.Dp(16), func(gtx layout.Context) layout.Dimensions {
 			drawn = true
-			return c.pickerLayout(gtx, l, p, animate, area.Min)
+			return c.pickerLayout(gtx, l, p, animate, c.pickerMenu.bounds.Min)
 		})
 		// The picker closed: its stickers keep their first frames only.
 		if c.pickerDrawn && !drawn {
@@ -891,7 +891,7 @@ func (c *messageComposer) Layout(gtx layout.Context, chat int64, l localization.
 			menuSize := gtx.Constraints.Max
 			sc := scheme(gtx)
 			defer clip.UniformRRect(image.Rectangle{Max: menuSize}, gtx.Dp(12)).Push(gtx.Ops).Pop()
-			overlayFill(gtx, p.menuBackdrop(), menuSize, area.Min, sc.SurfaceContainerHigh, gtx.Dp(12))
+			overlayFill(gtx, p.menuBackdrop(), menuSize, c.attachMenu.bounds.Min, sc.SurfaceContainerHigh, gtx.Dp(12))
 			// Without this clip the menu's input region covers the surrounding chat
 			// and prevents the outside-click handler from closing the menu.
 			event.Op(gtx.Ops, &c.attachmentActions)

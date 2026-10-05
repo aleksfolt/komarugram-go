@@ -251,7 +251,7 @@ func (p *chatPage) layoutChatMenu(gtx layout.Context, l localization.Catalog) {
 		defer clip.UniformRRect(image.Rectangle{Max: size}, radius).Push(gtx.Ops).Pop()
 		// The menu is drawn over the whole page, the history recorded is of
 		// its body under the header.
-		overlayFill(gtx, p.menuBackdrop().shifted(image.Pt(0, gtx.Dp(chatHeaderSize))), size, m.rect.Min, sc.SurfaceContainerHigh, radius)
+		overlayFill(gtx, p.menuBackdrop().shifted(image.Pt(0, gtx.Dp(chatHeaderSize))), size, m.menu.bounds.Min, sc.SurfaceContainerHigh, radius)
 		// Clicks on the menu itself do not close it.
 		event.Op(gtx.Ops, &m.menu)
 		y := gtx.Dp(menuPadding)

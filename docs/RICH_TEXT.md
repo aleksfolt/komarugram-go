@@ -1037,12 +1037,13 @@ are not in this plan.
   JSON and content revisions preserve both. Already cached messages need
   to be fetched again to acquire metadata the old converter discarded.
 - Ordinary `pre` entities draw as code blocks with a language header and
-  copy button; quote entities draw with a bar. Collapsed quotes show three
-  visual lines, with a local expand/collapse button. Code wraps at grapheme
+  copy icon; quote entities draw with a bar. Collapsed quotes show three
+  visual lines, with a compact expand/collapse icon in the right gutter
+  and an animated height transition. Code wraps at grapheme
   boundaries. Syntax highlighting is still stage 4a.
 - Inline styles, links, spoilers and selection share the message's original
   rune coordinates across blocks. Code copying respects protected messages
-  and unrevealed spoilers. Layout renderer revision is now 12.
+  and unrevealed spoilers. Layout renderer revision is now 14.
 - Entity intervals are validated without integer overflow and cannot split
   UTF-16 surrogate pairs. A sorted event sweep replaces the quadratic
   scan; redundant styles merge without copying strings. On Linux amd64,
