@@ -205,14 +205,16 @@ The upgrade was tried in a scratch copy of the repository:
   - `chatPage.richText` (`ui/history_text_blocks.go`) draws the runs as flows
     through `internal/messenger/styledtext`.
   - Done: bold, italic, underline and strike; spoiler with its reveal;
-    links and `@mentions`; custom emoji; text selection.
+    links and `@mentions`; mentions by ID, as `tg://user?id=…` links that
+    the client opens itself (`model/tglink.go`); custom emoji; text
+    selection.
   - Inline `code` is monospace. `pre` has a block, language header and
     copy button. A blockquote has a bar; `collapsed` shows three visual
     lines and can be expanded locally. Both retain nested inline styles,
     source offsets and selection across blocks.
   - Dropped as `unsupported`, shown as plain text: hashtag, bot command,
-    email, phone, cashtag, bank card, mention by ID, formatted date and the
-    diff entities.
+    email, phone, cashtag, bank card, formatted date and the diff
+    entities.
 - **Ordinary entity blocks only; no article layout yet.**
 - **`rich_message` is not read.**
 - **A `.md` file opens in the system's program** (`ui/attachments.go`).
@@ -300,8 +302,8 @@ What this shows:
   a minute. Nothing can stop the parse, and memory is not capped. Using
   goldmark would need a low size limit (the link case already takes
   0.5–1 s at 100 KB), upstream fixes or local patches, and a goroutine that
-  is allowed to run to its end. These cases should be reported upstream
-  whatever is chosen.
+  is allowed to run to its end. These cases are recorded here, not
+  reported upstream.
 - Ordinary documents parse in under 0.1 s in all of them. The wasm build is
   about 4× slower than native, which does not matter at these sizes.
 
@@ -371,8 +373,7 @@ With font and layout stubs in place of the three host functions:
   exception it throws while parsing `\infty`. A minimal C++ test passes in
   both modes: derived, base, `std::` and `int` exceptions, and a rethrow
   across two `try` blocks. So the fault is in wazero's compiled exception
-  path on a larger module. It needs a reduced reproducer and a report to
-  wazero.
+  path on a larger module. It is recorded here, not reported to wazero.
   Until it is fixed, MicroTeX would run under the interpreter. Formulas are
   small and can be cached as drawn, so the speed is acceptable.
 - **Exceptions are expensive under wazero's compiler even where they
@@ -631,8 +632,7 @@ compiler. What it takes:
     memory reached 36 MB on the hostile set).
   - Calls checked after the fact, as `pkg/sandbox` does; every hostile
     formula stayed bounded.
-  - A compilation cache is worth adding for every module, not only this
-    one.
+  - The compilation cache every module shares (`pkg/sandbox/cache.go`).
 - **Errors.** Show the formula's source, as tdesktop does when a formula
   fails.
 
@@ -678,9 +678,9 @@ exceeded".
 
 go-latex is not usable for Telegram's formulas.
 
-Until a renderer is chosen, show a formula's source as text. When a formula
-fails, tdesktop also shows its source, or `[math]` when the source is empty
-(`FallbackText`, `iv/markdown/iv_markdown_math_renderer.cpp`).
+Until the RaTeX module is in the client, show a formula's source as text.
+When a formula fails, tdesktop also shows its source, or `[math]` when the
+source is empty (`FallbackText`, `iv/markdown/iv_markdown_math_renderer.cpp`).
 
 ## Code highlighting
 
@@ -1016,7 +1016,7 @@ large and needs a dynamic linker.
 
 | # | Stage | Needs a decision |
 |---|---|---|
-| 0 | Finish ordinary entities: `pre` as a block with its language (kept in `model.Entity`) and copy button; blockquote with its bar and `collapsed`; clickable hashtag, bot command, email, phone, mention by ID; formatted date | — |
+| 0 | Finish ordinary entities: `pre` as a block with its language (kept in `model.Entity`) and copy button; blockquote with its bar and `collapsed`; clickable hashtag, bot command, email, phone; formatted date | — |
 | 1 | `model.RichPage`; conversion from `tg` (RichText into runs and entities, PageBlock into blocks); stored in the cache's JSON; `part` and `messages.getRichMessage`; summary text for the chat list, replies and FTS | gotd v0.162.0 (layer 229) |
 | 2 | Article engine: headings, nested lists with numbering and checkboxes, quotes, code, divider, tables with spans and alignment, details, media blocks, sub- and superscript, marks, anchors, inline images, buttons; selection across blocks | — |
 | 3 | The engine in the bubble: heights in `HeightIndex` and the layout cache, clicks, lazy media | — |
@@ -1074,8 +1074,9 @@ are not in this plan.
   messages, collapsed and expanded, in light and dark themes. It is part
   of `cmd/render-all`; the same example is at the end of demo histories.
 
-Remaining in stage 0: clickable hashtags, bot commands, email, phone,
-mention by ID and formatted dates. `rich_message` conversion, summaries,
+Remaining in stage 0: clickable hashtags, bot commands, email, phone
+and formatted dates. Mentions by ID came with the link handling merged
+from NaixROOT's fork (see below). `rich_message` conversion, summaries,
 full article loading and the shared article engine remain stages 1–3;
 rich messages themselves can still appear empty. RaTeX, highlighting,
 Markdown and Instant View remain later stages.
@@ -1102,7 +1103,8 @@ Markdown and Instant View remain later stages.
 - The previous full run exposed intermittent failures in existing UI button
   tests (`TestChatRowMenuPins`, `TestCallbackButton`); this change does
   not claim a clean full-suite result. Another full run remains deferred;
-  no new batch renders were produced during the focused follow-up.
+  no new batch renders were produced during the focused follow-up. (Done
+  on 2026-10-05, below.)
 - Before committing, a live Linux/X11 smoke check in `-demo -no-integrations`
   confirmed the code header, the closing punctuation after emoji, and
   quote expansion. The copy button's clipboard output exactly matched
@@ -1111,25 +1113,49 @@ Markdown and Instant View remain later stages.
   messages have not been checked yet; `@richtextdemobot` is the suggested
   live fixture once stages 1–3 are ready.
 
-### Existing fork work to reuse
+2026-10-05, Linux amd64, after the branch was rebased onto `main`:
 
-Checked NaixROOT/komarugram-go at
-[`568aced`](https://github.com/NaixROOT/komarugram-go/commit/568aced)
-(2026-10-04), without merging its other features into this change:
+- The full `go test ./internal/... ./cmd/... ./pkg/...` passes, with
+  `go vet` and `gofmt` clean. Two UI tests had failed:
+  - `TestAudioGoesOnInAnotherChat` failed from the commit that animates
+    panels: the bar of what plays grows from zero height. It found a real
+    defect: a closing bar left an empty strip over the history, since
+    nothing played any more to draw it. The bar now draws what it showed
+    last, without input, while it closes
+    (`TestAudioBarClosesWithWhatItShowed`, a GPU frame; it fails without
+    the fix).
+  - `TestCallbackButton` failed on `main` as well (2 runs of 5 there, 3
+    of 20 on the branch).
+    The bot was asked twice, not never: the test pressed again when the
+    bot had answered between its look at the store and the next click.
+    The client already ignores a button whose request is in flight, as
+    tdesktop does (`button->requestId`, `api/api_bot.cpp`). The test now
+    stops once a request is sent or waited for; 40 runs passed.
+  - `TestChatRowMenuPins` did not fail.
+- Windows amd64 (`messenger` and `kitchen`) and arm64 (`messenger`)
+  cross-builds pass with `CGO_ENABLED=0` and no other flags.
+- macOS, supported since `main` merged its port, was not built: darwin
+  needs cgo (Gio's GL, `security`), which this machine cannot cross-build.
 
-- [`d19c156`](https://github.com/NaixROOT/komarugram-go/commit/d19c1569e1526cf3fa11bb0295e9a435de6f9b31)
-  already implements bot inline keyboards below the bubble, with shared
-  surfaces and icons (`history_keyboard.go`). Reuse that change rather
-  than rebuilding bot buttons as part of rich text.
-- [`94bef04`](https://github.com/NaixROOT/komarugram-go/commit/94bef04907c6dec143da22e3de1eeb1a64b0abdf)
-  adds Telegram link parsing, opening chats/posts/sets/invites, and
-  `MessageEntityMentionName` conversion to `tg://user?id=…`. Its follow-ups
-  `da5443a` and `d55f51f` refine invitation and peer resolution. Integrate
-  that existing path before implementing the remaining stage-0 link
-  actions; mention-by-ID does not need a second implementation.
+### Fork work merged into main
 
-The code/quote block changes deliberately leave these keyboard and link
-routing implementations independent. Empty lines in code already retain
+NaixROOT/komarugram-go's work is now in `main` (PR #21 and earlier), and
+the rich text branch is rebased onto it:
+
+- `d19c156` draws bot inline keyboards below the bubble, with shared
+  surfaces and icons (`history_keyboard.go`). Rich text does not rebuild
+  bot buttons.
+- `94bef04` parses Telegram's links and opens chats, posts, sets and
+  invites in the client, and converts `MessageEntityMentionName` to
+  `tg://user?id=…`; `da5443a` and `d55f51f` refine invitations and peer
+  resolution. The remaining stage-0 link actions go through this path;
+  mention by ID needs nothing more.
+- Its notification settings called `settingsChoiceCard` without the
+  height transition the animated panels added; the rebase gave the
+  notification groups their own.
+
+The code/quote block changes leave these keyboard and link routing
+implementations independent. Empty lines in code already retain
 height; this was checked directly and included in the block-copy and
 collapsed-quote regression scenarios, without an additional production fix.
 
@@ -1153,6 +1179,8 @@ collapsed-quote regression scenarios, without an additional production fix.
     Cyrillic;
   - any of it on Windows; the libraries are portable, but nothing was run
     there (this machine has no Wine);
+  - any of it on macOS, which needs cgo and cannot be built from this
+    Linux machine;
   - chroma's colors against tdesktop's (they cannot match token for
     token);
   - AyuGram and materialgram, which were not cloned.
