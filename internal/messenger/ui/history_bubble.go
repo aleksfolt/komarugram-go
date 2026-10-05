@@ -156,7 +156,8 @@ func (p *chatPage) row(gtx layout.Context, m model.Message, date bool, join bubb
 		p.rows[m.Key.MessageID] = r
 	}
 	if m.ReplyToMessageID != 0 && r.reply.Clicked(gtx) {
-		p.jumpTo(m.ReplyToMessageID)
+		p.jumpPending = m.ReplyToMessageID
+		p.invalidate()
 	}
 	for {
 		e, ok := r.quick.Update(gtx.Source)

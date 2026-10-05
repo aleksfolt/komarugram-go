@@ -1,0 +1,315 @@
+// SPDX-License-Identifier: Unlicense OR MIT
+
+package security
+
+/*
+#cgo LDFLAGS: -framework Security -framework CoreFoundation
+#include <Security/Security.h>
+#include <CoreFoundation/CoreFoundation.h>
+#include <stdlib.h>
+
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+
+#define KC_SERVICE "komarugram-go"
+
+static CFMutableDictionaryRef kcQuery(const char *account) {
+	CFMutableDictionaryRef q = CFDictionaryCreateMutable(NULL, 0, &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
+	CFStringRef service = CFStringCreateWithCString(NULL, KC_SERVICE, kCFStringEncodingUTF8);
+	CFStringRef acct = CFStringCreateWithCString(NULL, account, kCFStringEncodingUTF8);
+	CFDictionarySetValue(q, kSecClass, kSecClassGenericPassword);
+	CFDictionarySetValue(q, kSecAttrService, service);
+	CFDictionarySetValue(q, kSecAttrAccount, acct);
+	CFRelease(service);
+	CFRelease(acct);
+	return q;
+}
+
+// kcTrustAny makes every entry of access trust any application: a NULL list
+// of applications in an entry means that, while SecAccessCreate's own NULL
+// means the calling application alone.
+static void kcTrustAny(SecAccessRef access, CFStringRef label) {
+	CFArrayRef acls = NULL;
+	if (SecAccessCopyACLList(access, &acls) != errSecSuccess || acls == NULL) {
+		return;
+	}
+	for (CFIndex i = 0; i < CFArrayGetCount(acls); i++) {
+		SecACLRef acl = (SecACLRef)CFArrayGetValueAtIndex(acls, i);
+		CFArrayRef apps = NULL;
+		CFStringRef desc = NULL;
+		SecKeychainPromptSelector sel = 0;
+		if (SecACLCopyContents(acl, &apps, &desc, &sel) == errSecSuccess) {
+			SecACLSetContents(acl, NULL, label, 0);
+			if (apps != NULL) {
+				CFRelease(apps);
+			}
+			if (desc != NULL) {
+				CFRelease(desc);
+			}
+		}
+	}
+	CFRelease(acls);
+}
+
+// kcOpen does the same for an item that is there already, made by an earlier
+// build; it may ask for the keychain's password once.
+static int kcOpen(const char *account) {
+	CFMutableDictionaryRef q = kcQuery(account);
+	CFDictionarySetValue(q, kSecReturnRef, kCFBooleanTrue);
+	CFDictionarySetValue(q, kSecMatchLimit, kSecMatchLimitOne);
+	CFTypeRef ref = NULL;
+	OSStatus st = SecItemCopyMatching(q, &ref);
+	CFRelease(q);
+	if (st != errSecSuccess) {
+		return (int)st;
+	}
+	SecAccessRef access = NULL;
+	st = SecKeychainItemCopyAccess((SecKeychainItemRef)ref, &access);
+	if (st == errSecSuccess) {
+		CFStringRef label = CFStringCreateWithCString(NULL, KC_SERVICE, kCFStringEncodingUTF8);
+		kcTrustAny(access, label);
+		st = SecKeychainItemSetAccess((SecKeychainItemRef)ref, access);
+		CFRelease(label);
+		CFRelease(access);
+	}
+	CFRelease(ref);
+	return (int)st;
+}
+
+// kcTrustsAny tells whether every entry of the item's access trusts any
+// application.
+static int kcTrustsAny(const char *account) {
+	CFMutableDictionaryRef q = kcQuery(account);
+	CFDictionarySetValue(q, kSecReturnRef, kCFBooleanTrue);
+	CFDictionarySetValue(q, kSecMatchLimit, kSecMatchLimitOne);
+	CFTypeRef ref = NULL;
+	OSStatus st = SecItemCopyMatching(q, &ref);
+	CFRelease(q);
+	if (st != errSecSuccess) {
+		return 0;
+	}
+	SecAccessRef access = NULL;
+	CFArrayRef acls = NULL;
+	int any = 0;
+	if (SecKeychainItemCopyAccess((SecKeychainItemRef)ref, &access) == errSecSuccess &&
+	    SecAccessCopyACLList(access, &acls) == errSecSuccess && acls != NULL) {
+		any = 1;
+		for (CFIndex i = 0; i < CFArrayGetCount(acls); i++) {
+			CFArrayRef apps = NULL;
+			CFStringRef desc = NULL;
+			SecKeychainPromptSelector sel = 0;
+			SecACLRef acl = (SecACLRef)CFArrayGetValueAtIndex(acls, i);
+			if (SecACLCopyContents(acl, &apps, &desc, &sel) == errSecSuccess) {
+				if (apps != NULL) {
+					any = 0;
+					CFRelease(apps);
+				}
+				if (desc != NULL) {
+					CFRelease(desc);
+				}
+			}
+		}
+	}
+	if (acls != NULL) {
+		CFRelease(acls);
+	}
+	if (access != NULL) {
+		CFRelease(access);
+	}
+	CFRelease(ref);
+	return any;
+}
+
+static int kcAdd(const char *account, const unsigned char *data, int n) {
+	CFMutableDictionaryRef q = kcQuery(account);
+	CFDataRef value = CFDataCreate(NULL, data, n);
+	CFDictionarySetValue(q, kSecValueData, value);
+	// The keychain ties an item to the code signature of its creator by
+	// default, and a binary built here is signed anew by every build, so each
+	// start asked for the keychain's password. An access object whose entries
+	// trust any application is given to the item instead.
+	SecAccessRef access = NULL;
+	CFStringRef label = CFStringCreateWithCString(NULL, KC_SERVICE, kCFStringEncodingUTF8);
+	if (SecAccessCreate(label, NULL, &access) == errSecSuccess) {
+		kcTrustAny(access, label);
+		CFDictionarySetValue(q, kSecAttrAccess, access);
+	}
+	OSStatus st = SecItemAdd(q, NULL);
+	if (access != NULL) {
+		CFRelease(access);
+	}
+	CFRelease(label);
+	CFRelease(value);
+	CFRelease(q);
+	return (int)st;
+}
+
+// kcGet copies the item into out, which holds cap bytes, and its length into n.
+static int kcGet(const char *account, unsigned char *out, int cap, int *n) {
+	CFMutableDictionaryRef q = kcQuery(account);
+	CFDictionarySetValue(q, kSecReturnData, kCFBooleanTrue);
+	CFDictionarySetValue(q, kSecMatchLimit, kSecMatchLimitOne);
+	CFTypeRef res = NULL;
+	OSStatus st = SecItemCopyMatching(q, &res);
+	CFRelease(q);
+	if (st != errSecSuccess) {
+		return (int)st;
+	}
+	CFIndex len = CFDataGetLength((CFDataRef)res);
+	if (len > cap) {
+		CFRelease(res);
+		return errSecAllocate;
+	}
+	CFDataGetBytes((CFDataRef)res, CFRangeMake(0, len), out);
+	*n = (int)len;
+	CFRelease(res);
+	return errSecSuccess;
+}
+
+static int kcDelete(const char *account) {
+	CFMutableDictionaryRef q = kcQuery(account);
+	OSStatus st = SecItemDelete(q);
+	CFRelease(q);
+	return (int)st;
+}
+
+static int kcProbe(void) {
+	unsigned char b[1];
+	int n = 0;
+	int st = kcGet("probe", b, sizeof b, &n);
+	return st == errSecItemNotFound ? errSecSuccess : st;
+}
+
+static char *kcMessage(int st) {
+	CFStringRef s = SecCopyErrorMessageString((OSStatus)st, NULL);
+	if (s == NULL) {
+		return NULL;
+	}
+	CFIndex size = CFStringGetMaximumSizeForEncoding(CFStringGetLength(s), kCFStringEncodingUTF8) + 1;
+	char *buf = malloc(size);
+	if (!CFStringGetCString(s, buf, size, kCFStringEncodingUTF8)) {
+		free(buf);
+		buf = NULL;
+	}
+	CFRelease(s);
+	return buf;
+}
+*/
+import "C"
+
+import (
+	"crypto/hmac"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
+	"errors"
+	"fmt"
+	"unsafe"
+
+	"golang.org/x/crypto/chacha20poly1305"
+)
+
+// keychainKey is the TPM of a Mac: a random key kept in the login keychain,
+// which the system releases to this program only, and only while the user is
+// logged in. The sealed object is the secret wrapped by that key and by the
+// authorization, so the password is still needed to open it.
+//
+// The item is open to any program of the user, as the TPM's device is: the
+// key alone opens nothing without the master password and the sealed file,
+// and the keychain's own check, by the code signature of the creator, asks
+// for the keychain's password at every start of a binary signed anew by each
+// build.
+type keychainKey struct{}
+
+// defaultTPM is the hardware the security configuration is sealed by.
+func defaultTPM() TPM { return keychainKey{} }
+
+func keychainError(what string, st C.int) error {
+	msg := ""
+	if m := C.kcMessage(st); m != nil {
+		msg = C.GoString(m)
+		C.free(unsafe.Pointer(m))
+	}
+	return fmt.Errorf("keychain %s: %s (%d)", what, msg, int(st))
+}
+
+func (keychainKey) Probe() error {
+	if st := C.kcProbe(); st != 0 {
+		return fmt.Errorf("%w: %w", ErrUnavailable, keychainError("probe", st))
+	}
+	return nil
+}
+
+func wrapKey(item, authorization []byte) []byte {
+	mac := hmac.New(sha256.New, item)
+	mac.Write(authorization)
+	return mac.Sum(nil)
+}
+
+func (keychainKey) Seal(secret, authorization []byte) (public, private []byte, err error) {
+	item := make([]byte, keySize)
+	id := make([]byte, 16)
+	if _, err := rand.Read(item); err != nil {
+		return nil, nil, err
+	}
+	if _, err := rand.Read(id); err != nil {
+		return nil, nil, err
+	}
+	aead, err := chacha20poly1305.NewX(wrapKey(item, authorization))
+	if err != nil {
+		return nil, nil, err
+	}
+	nonce := make([]byte, aead.NonceSize())
+	if _, err := rand.Read(nonce); err != nil {
+		return nil, nil, err
+	}
+	private = aead.Seal(nonce, nonce, secret, id)
+	account := C.CString(hex.EncodeToString(id))
+	defer C.free(unsafe.Pointer(account))
+	if st := C.kcAdd(account, (*C.uchar)(unsafe.Pointer(&item[0])), C.int(len(item))); st != 0 {
+		return nil, nil, keychainError("add", st)
+	}
+	return id, private, nil
+}
+
+func (keychainKey) Unseal(public, private, authorization []byte) ([]byte, error) {
+	account := C.CString(hex.EncodeToString(public))
+	defer C.free(unsafe.Pointer(account))
+	item := make([]byte, 256)
+	var n C.int
+	if st := C.kcGet(account, (*C.uchar)(unsafe.Pointer(&item[0])), C.int(len(item)), &n); st != 0 {
+		return nil, keychainError("read", st)
+	}
+	aead, err := chacha20poly1305.NewX(wrapKey(item[:n], authorization))
+	if err != nil {
+		return nil, err
+	}
+	if len(private) < aead.NonceSize() {
+		return nil, errors.New("keychain: sealed object is too short")
+	}
+	return aead.Open(nil, private[:aead.NonceSize()], private[aead.NonceSize():], public)
+}
+
+// forget removes the keychain item of a sealed object.
+func (keychainKey) Forget(public []byte) {
+	account := C.CString(hex.EncodeToString(public))
+	defer C.free(unsafe.Pointer(account))
+	C.kcDelete(account)
+}
+
+// Relax opens the item of a sealed object, made by an earlier build, to any
+// program of the user. The system may ask for the keychain's password once.
+func (keychainKey) Relax(public []byte) error {
+	account := C.CString(hex.EncodeToString(public))
+	defer C.free(unsafe.Pointer(account))
+	if st := C.kcOpen(account); st != 0 {
+		return keychainError("open", st)
+	}
+	return nil
+}
+
+// opensToAny tells whether the item is open to any program.
+func (keychainKey) opensToAny(public []byte) bool {
+	account := C.CString(hex.EncodeToString(public))
+	defer C.free(unsafe.Pointer(account))
+	return C.kcTrustsAny(account) != 0
+}

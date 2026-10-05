@@ -86,7 +86,11 @@ type chatPage struct {
 	// highlightUntil; infoAsked, set when the menu asks for the chat's info.
 	highlight      model.MessageID
 	highlightUntil time.Time
-	infoAsked      bool
+	// jumpPending is a message a quote asked to jump to while the list was
+	// being laid out: moving the list then draws a frame from a position
+	// that is gone, so the jump is made at the start of the next layout.
+	jumpPending model.MessageID
+	infoAsked   bool
 	// themeAsked is set when the menu asks for the chat's theme, which
 	// themeShown keeps for the info opened.
 	themeAsked, themeShown bool
@@ -394,6 +398,10 @@ func (p *chatPage) Layout(gtx layout.Context, c model.Chat, l localization.Catal
 
 func (p *chatPage) layoutHistory(gtx layout.Context, c model.Chat, l localization.Catalog, animate bool) layout.Dimensions {
 	p.animate = animate
+	if id := p.jumpPending; id != 0 {
+		p.jumpPending = 0
+		p.jumpTo(id)
+	}
 	p.updateDelete(c.ID, l)
 	p.updateMembership(c.ID, l)
 	p.trace = diagnostics.From(gtx.Values)

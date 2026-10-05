@@ -8,11 +8,13 @@ package appwindow
 
 import (
 	"image"
+	"image/color"
 	"komarugram/internal/alert"
 	"komarugram/internal/crash"
 	"komarugram/internal/diagnostics"
 	"log"
 	"os"
+	"runtime"
 	"runtime/debug"
 	"sync"
 	"sync/atomic"
@@ -94,7 +96,9 @@ type Window struct {
 	suspended   atomic.Bool
 	// transparent and blurred are what the platform granted of
 	// Options.Transparent and Options.BlurBehind.
-	transparent, blurred bool
+	transparent, blurred    bool
+	frameDark, frameDarkSet bool
+	frameColor              color.NRGBA
 	// blurAsked is whether blur was asked for last; frame is the window's
 	// own frame, drawn where the blur leaves it without the system's.
 	blurAsked bool
@@ -114,6 +118,13 @@ func (w *Window) Translucency() (transparent, blurred bool) {
 	return w.transparent, w.blurred
 }
 
+// CanBeTransparent reports whether the window can be made transparent: it is
+// now, or the system makes it when asked (macOS, where it is asked only when
+// the surfaces are translucent, see WantsTransparent).
+func (w *Window) CanBeTransparent() bool {
+	return runtime.GOOS == "darwin" || w.transparent
+}
+
 // SetTitle changes the window title. Setting the title it has does nothing:
 // callers may repeat it on every update, and on Windows each change
 // reconfigures the whole window.
@@ -124,6 +135,31 @@ func (w *Window) SetTitle(title string) {
 	w.titleMu.Unlock()
 	if !same {
 		w.Option(app.Title(title))
+	}
+}
+
+// SetFrameDark picks the dark or the light look of the system's window frame
+// (macOS), which otherwise follows the system, not the theme of the program.
+// Setting the look it has does nothing.
+func (w *Window) SetFrameDark(dark bool) {
+	w.titleMu.Lock()
+	same := w.frameDarkSet && w.frameDark == dark
+	w.frameDarkSet, w.frameDark = true, dark
+	w.titleMu.Unlock()
+	if !same && w.Window != nil && runtime.GOOS == "darwin" {
+		w.Option(app.DarkFrame(dark))
+	}
+}
+
+// SetFrameColor colors the system's window frame (macOS) as the content, so
+// that the two match. Setting the color it has does nothing.
+func (w *Window) SetFrameColor(c color.NRGBA) {
+	w.titleMu.Lock()
+	same := w.frameColor == c
+	w.frameColor = c
+	w.titleMu.Unlock()
+	if !same && w.Window != nil && runtime.GOOS == "darwin" {
+		w.Option(app.FrameColor(c))
 	}
 }
 

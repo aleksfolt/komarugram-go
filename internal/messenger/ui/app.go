@@ -45,7 +45,7 @@ type App struct {
 	window *appwindow.Window
 	store  model.Store
 
-	windowEffectsSet, windowBlurWanted bool
+	windowEffectsSet, windowBlurWanted, windowTransparentWanted bool
 
 	preferences *preferences.Store
 	// ownUsers are the users of the accounts signed in here, which Local
@@ -346,8 +346,7 @@ func New(w *appwindow.Window, store model.Store, services Services) *App {
 		}
 	}
 	a.settings.windowTransparencyAvailable = func() bool {
-		transparent, _ := w.Translucency()
-		return transparent
+		return w.CanBeTransparent()
 	}
 	a.settings.overlays = func() preferences.Overlays { return a.preferences.Global().Overlays }
 	a.settings.setOverlays = func(o preferences.Overlays) {
@@ -643,16 +642,21 @@ func (a *App) Theme(gtx layout.Context) *token.Theme {
 	if v := defaults.FontsVersion(); v != a.themeFonts {
 		a.themeFonts, a.darkTheme, a.lightTheme = v, nil, nil
 	}
+	theme := a.lightTheme
 	if a.dark() {
 		if a.darkTheme == nil {
 			a.darkTheme = defaults.NewTheme(gtx, schemes.SchemeBaselineDark())
 		}
-		return a.darkTheme
+		theme = a.darkTheme
+	} else {
+		if a.lightTheme == nil {
+			a.lightTheme = defaults.NewTheme(gtx, schemes.SchemeBaselineLight())
+		}
+		theme = a.lightTheme
 	}
-	if a.lightTheme == nil {
-		a.lightTheme = defaults.NewTheme(gtx, schemes.SchemeBaselineLight())
-	}
-	return a.lightTheme
+	a.window.SetFrameDark(a.dark())
+	a.window.SetFrameColor(theme.Scheme.Surface.Color.AsNRGBA())
+	return theme
 }
 
 // Update implements appwindow.Content.

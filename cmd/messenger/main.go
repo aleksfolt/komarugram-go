@@ -323,7 +323,7 @@ func windowOptions(prefs *preferences.Store) appwindow.Options {
 	global := prefs.Global()
 	catalog := localization.For(global.Language)
 	return appwindow.Options{
-		Transparent: true,
+		Transparent: appwindow.WantsTransparent(global.WindowTransparency > 0),
 		BlurBehind:  global.WindowBlur && global.WindowTransparency > 0,
 		Title:       catalog.T("app.title"),
 		Width:       unit.Dp(1200),

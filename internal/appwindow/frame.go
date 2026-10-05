@@ -44,6 +44,12 @@ func effectOptions(transparent, blur bool) []app.Option {
 	return opts
 }
 
+// WantsTransparent tells whether a window whose surfaces are translucent, or
+// not, should ask to be transparent. Elsewhere it always does, so that the
+// slider can change live; on macOS a transparent window gets a backdrop in
+// place of the frame's color, so it asks only when it has to.
+func WantsTransparent(translucent bool) bool { return runtime.GOOS != "darwin" || translucent }
+
 // SetEffects asks for a window the desktop shows through where the content
 // does not paint, and for the blur of what shows. Translucency reports what
 // was granted.

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Unlicense OR MIT
 
-//go:build cgo
+//go:build linux && cgo
 
 package deviceinfo
 

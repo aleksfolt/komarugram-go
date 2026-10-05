@@ -101,7 +101,7 @@ func Open() (*Manager, error) {
 	if err != nil {
 		return nil, err
 	}
-	return OpenPath(filepath.Join(dir, "komarugram-go", "security.json"), hardwareTPM{})
+	return OpenPath(filepath.Join(dir, "komarugram-go", "security.json"), defaultTPM())
 }
 
 // OpenPath is Open with explicit dependencies, primarily for tests.

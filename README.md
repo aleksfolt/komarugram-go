@@ -68,7 +68,7 @@ KomaruGram Go can be ported to a wide range of operating systems thanks to its a
 | Windows 10/11 | ✅ First-class support |
 | Linux (Wayland) | ✅ First-class support |
 | Linux (X11) | ✅ Supported, within X11 limitations |
-| MacOS | ⚠️ Should build; not tested in practice |
+| MacOS | ✅ First-class support |
 | FreeBSD | ⚠️ Should build; not tested in practice |
 | OpenBSD | ⚠️ Should build in theory; not tested |
 | NetBSD | ❓ Porting possible, with some caveats |

@@ -4,10 +4,10 @@ How Gio draws on each platform, and what building KomaruGram for other
 Unix-like systems takes, from a FreeBSD build tried in October 2026; and
 what a port to Haiku would take, from its sources.
 
-**What is checked stays Linux and Windows.** A native build for FreeBSD,
+**What is checked stays Linux, Windows and macOS.** A native build for FreeBSD,
 and likely OpenBSD, is possible and cheap to port, but nobody runs it:
-live checks, the tests and the cross-builds in `AGENTS.md` are for Linux
-and Windows only. macOS builds formally and is not supported either. A
+live checks, the tests and the cross-builds in `AGENTS.md` are for Linux,
+Windows and macOS only. A
 change need not be checked on these systems, and nothing here is a
 promise that they work.
 
