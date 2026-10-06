@@ -84,7 +84,15 @@ func RichExample(part bool) model.RichPage {
 	if part {
 		return page
 	}
+	header := func(s string) model.RichTableCell { return model.RichTableCell{Header: true, Text: text(s)} }
+	cell := func(s string) model.RichTableCell { return model.RichTableCell{Text: text(s)} }
 	return model.RichPage{Blocks: append(page.Blocks,
+		// Wider than the article: it scrolls sideways.
+		model.RichBlock{Kind: model.RichTable, Text: text("Широкая таблица"), Bordered: true, Striped: true, Rows: []model.RichTableRow{
+			{Cells: []model.RichTableCell{header("Язык"), header("Типизация"), header("Сборка мусора"), header("Параллелизм"), header("Первый выпуск")}},
+			{Cells: []model.RichTableCell{cell("Go"), cell("статическая"), cell("есть"), cell("горутины и каналы"), cell("2009")}},
+			{Cells: []model.RichTableCell{cell("Rust"), cell("статическая"), cell("нет, владение"), cell("потоки и async"), cell("2015")}},
+		}},
 		model.RichBlock{Kind: model.RichDivider},
 		model.RichBlock{Kind: model.RichDetails, Text: text("Подробнее"), Blocks: []model.RichBlock{{Kind: model.RichParagraph, Anchor: "end", Text: text("Окончание статьи, которое пришло только целиком.")}}},
 		model.RichBlock{Kind: model.RichFooter, Text: text("Конец статьи")},

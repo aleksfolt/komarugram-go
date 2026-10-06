@@ -79,6 +79,10 @@ func articleFixture() model.RichPage {
 			{Cells: []model.RichTableCell{{Text: text("RaTeX")}, {Text: text("нет"), Align: "center"}}},
 			{Cells: []model.RichTableCell{{Text: text("Статьи: весь движок целиком, с таблицами"), Colspan: 2}, {Text: text("да"), Align: "right"}}},
 		}},
+		model.RichBlock{Kind: model.RichTable, Text: text("Широкая таблица прокручивается вбок"), Bordered: true, Rows: []model.RichTableRow{
+			{Cells: []model.RichTableCell{{Header: true, Text: text("Язык")}, {Header: true, Text: text("Типизация")}, {Header: true, Text: text("Сборка мусора")}, {Header: true, Text: text("Параллелизм")}, {Header: true, Text: text("Первый выпуск")}}},
+			{Cells: []model.RichTableCell{{Text: text("Go")}, {Text: text("статическая")}, {Text: text("есть")}, {Text: text("горутины")}, {Text: text("2009")}}},
+		}},
 		model.RichBlock{Kind: model.RichDetails, Open: true, Text: text("Открытые подробности"), Blocks: []model.RichBlock{{Kind: model.RichParagraph, Text: text("Текст внутри подробностей.")}}},
 		model.RichBlock{Kind: model.RichDetails, Text: text("Закрытые подробности"), Blocks: []model.RichBlock{{Kind: model.RichParagraph, Text: text("Не видно.")}}},
 		model.RichBlock{Kind: model.RichMediaBlock, Media: []model.RichMedia{photo("demo/photo", 640, 360), photo("demo/photo2", 360, 640), photo("demo/photo3", 640, 480)}, Caption: text("Коллаж из трёх фото")},

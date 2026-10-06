@@ -88,6 +88,10 @@ type messageRow struct {
 	// streaming is set for a draft a bot streams, whose buttons do
 	// nothing until it is a message.
 	streaming bool
+	// viewTop is where the top of the article is in the view that shows
+	// it, when viewKnown: media out of sight are not loaded.
+	viewTop   int
+	viewKnown bool
 	// alone is set for the row of an article's photo, which opens alone,
 	// not among the chat's photos.
 	alone bool
@@ -113,6 +117,12 @@ type chatPage struct {
 	highlightUntil time.Time
 	// writing turns in the footer of the drafts bots stream.
 	writing loadingIndicator
+	// rowTop is where the row laid out is in the history, as the last
+	// frame put it, while rowTopKnown; viewHeight is how high the view
+	// of the history, or of an article, is.
+	rowTop      int
+	rowTopKnown bool
+	viewHeight  int
 	// anchorJump is the message whose article a link asked to scroll to
 	// an anchor of (articleState.jump), while the list was laid out;
 	// anchorWait counts the frames the anchor was not laid out in.
@@ -178,7 +188,10 @@ type chatPage struct {
 	rows      map[model.MessageID]*messageRow
 	// textRunes are the rune counts of the messages' texts, which the
 	// estimates of unmeasured heights need on every change of width.
-	textRunes                                  map[model.MessageID]textRunes
+	textRunes map[model.MessageID]textRunes
+	// articleHeights are the guesses of how high rich messages' rows
+	// are, until they are laid out.
+	articleHeights                             map[model.MessageID]articleGuess
 	env                                        model.RenderEnvironment
 	heights                                    *model.HeightIndex
 	measures                                   map[model.MessageID]model.MessageLayout
@@ -547,7 +560,7 @@ func (p *chatPage) layoutHistory(gtx layout.Context, c model.Chat, l localizatio
 	}
 	p.historyWidth = size.X
 	theme := uint32(sc.Surface.Color.AsNRGBA().R)<<16 | uint32(sc.Surface.Color.AsNRGBA().G)<<8 | uint32(sc.Surface.Color.AsNRGBA().B)
-	env := model.RenderEnvironment{WidthPx: size.X, ScaleMilli: int(gtx.Metric.PxPerDp * 1000), TextScaleMilli: int(gtx.Metric.PxPerSp * 1000), Locale: string(l.Language()), FontRevision: fonts.Revision(), ThemeRevision: theme, RendererRevision: 15}
+	env := model.RenderEnvironment{WidthPx: size.X, ScaleMilli: int(gtx.Metric.PxPerDp * 1000), TextScaleMilli: int(gtx.Metric.PxPerSp * 1000), Locale: string(l.Language()), FontRevision: fonts.Revision(), ThemeRevision: theme, RendererRevision: 16}
 	if p.trace != nil {
 		p.trace.History.Environment = fmt.Sprintf("width:%d dp:%d sp:%d locale:%s font:%d theme:%x renderer:%d", env.WidthPx, env.ScaleMilli, env.TextScaleMilli, env.Locale, env.FontRevision, env.ThemeRevision, env.RendererRevision)
 	}
@@ -638,9 +651,21 @@ func (p *chatPage) layoutHistory(gtx layout.Context, c model.Chat, l localizatio
 			})
 		}
 		p.selectionEvents(gtx)
+		p.viewHeight = gtx.Constraints.Max.Y
+		defer func() { p.rowTopKnown = false }()
 		dims := p.list.Layout(gtx, len(p.messages), func(gtx layout.Context, i int) layout.Dimensions {
 			msg := p.messages[i]
 			date := p.dayStart[i]
+			switch pos := p.list.Position; {
+			case p.heights == nil:
+			case !pos.BeforeEnd:
+				// At its end, the history ends at the bottom of the view.
+				p.rowTop = int(p.heights.Prefix(i)) - max(0, int(p.heights.Total())-p.viewHeight)
+				p.rowTopKnown = true
+			case pos.First < len(p.messages):
+				p.rowTop = int(p.heights.Prefix(i)-p.heights.Prefix(pos.First)) - pos.Offset
+				p.rowTopKnown = true
+			}
 			if p.trace != nil {
 				p.trace.History.RowsLaidOut++
 			}
@@ -837,6 +862,10 @@ func (p *chatPage) rebuild(messages []model.Message, env model.RenderEnvironment
 			}
 			continue
 		}
+		if m.Rich != nil && len(m.Rich.Blocks) > 0 {
+			hs[i] = p.articleGuess(m, env)
+			continue
+		}
 		runes, ok := p.textRunes[m.Key.MessageID]
 		if !ok || runes.revision != m.ContentRevision {
 			runes = textRunes{m.ContentRevision, utf8.RuneCountInString(m.Text)}
@@ -857,6 +886,11 @@ func (p *chatPage) rebuild(messages []model.Message, env model.RenderEnvironment
 			delete(p.textRunes, id)
 		}
 	}
+	for id := range p.articleHeights {
+		if !alive[id] {
+			delete(p.articleHeights, id)
+		}
+	}
 	p.pruneSelection(alive)
 	p.heights = model.NewHeightIndex(hs)
 	p.list.Measurements = p.heights
@@ -870,6 +904,29 @@ func (p *chatPage) rebuild(messages []model.Message, env model.RenderEnvironment
 type textRunes struct {
 	revision uint64
 	n        int
+}
+
+// articleGuess is how high a rich message's row was guessed to be, at a
+// revision and in an environment.
+type articleGuess struct {
+	revision uint64
+	env      model.RenderEnvironment
+	height   int
+}
+
+// articleGuess guesses how high the row of rich message m is in env until
+// it is laid out: the bubble's padding and footer, and the article.
+func (p *chatPage) articleGuess(m model.Message, env model.RenderEnvironment) int {
+	if g, ok := p.articleHeights[m.Key.MessageID]; ok && g.revision == m.ContentRevision && g.env == env {
+		return g.height
+	}
+	metric := unit.Metric{PxPerDp: float32(env.ScaleMilli) / 1000, PxPerSp: float32(env.TextScaleMilli) / 1000}
+	h := metric.Dp(42) + articleEstimate(m, localization.For(env.Locale), metric, env.WidthPx)
+	if p.articleHeights == nil {
+		p.articleHeights = map[model.MessageID]articleGuess{}
+	}
+	p.articleHeights[m.Key.MessageID] = articleGuess{m.ContentRevision, env, h}
+	return h
 }
 
 func (p *chatPage) textFlow(gtx layout.Context, r *messageRow, block *messageTextBlock, origin image.Point, animate bool) layout.Dimensions {

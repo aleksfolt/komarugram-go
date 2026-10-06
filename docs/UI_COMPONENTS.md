@@ -132,7 +132,14 @@ cut short has "Show more" under it (`showMore`), which opens
 `articleWindow` (`article_window.go`): a window of its own whose
 `chatPage` draws the article as the history does, with its own photo
 viewer, dialogs and toasts; `newArticleView` is the same without the
-window, for tests. `ARTICLE_PNG_DIR=/tmp/article go test
+window, for tests; once it went to an anchor, its bar steps back and
+ahead (`articleWindow.step`). Until a rich message's row is laid out, the
+history guesses its height from its article (`article_height.go`, sharing
+the media's sizes with the layout). A row learns where its article is in
+the view (`messageRow.viewTop`, from `chatPage.rowTop`), and media far
+from it are not laid out, nor loaded. A table wider than its article
+scrolls sideways under its view (`tableScroll`), its view passing presses
+to the text under it. `ARTICLE_PNG_DIR=/tmp/article go test
 ./internal/messenger/ui -run TestRenderArticle` (`render-all -only
 article`) draws every kind of block, and a part with its button, narrow
 and wide, in both themes.

@@ -43,6 +43,9 @@ type articleState struct {
 	jump string
 	// more is the button under an article Telegram sent cut short.
 	more surface
+	// scrolls are how far tables wider than the article are scrolled, by
+	// block id.
+	scrolls map[int]*tableScroll
 }
 
 // openTo opens the details that hide the anchor name of doc, and reports
@@ -106,6 +109,10 @@ type articleDraw struct {
 	// textWidth is how wide the text drawn is, for an article that is as
 	// wide as its text.
 	textWidth int
+	// lazy is set when what of the article is near the view is known:
+	// from lo to hi in it. Media farther are not loaded.
+	lazy   bool
+	lo, hi int
 }
 
 // articleLayout draws the article of message m in its bubble: its blocks
@@ -121,6 +128,10 @@ func (p *chatPage) articleLayout(gtx layout.Context, r *messageRow, m model.Mess
 	clear(r.articleState.tops)
 	gtx.Constraints.Min = image.Point{}
 	a := &articleDraw{p: p, r: r, m: m, l: l, doc: doc, animate: animate}
+	if r.viewKnown && p.viewHeight > 0 {
+		// A view's height before and after it is near.
+		a.lazy, a.lo, a.hi = true, -r.viewTop-p.viewHeight, -r.viewTop+2*p.viewHeight
+	}
 	// Controls are recorded with the blocks and laid out after the text's
 	// area, so that a press on one starts no selection.
 	macro := op.Record(gtx.Ops)

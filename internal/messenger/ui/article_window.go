@@ -11,8 +11,10 @@ import (
 	"gio-mw/defaults/schemes"
 	"gio-mw/exp/appearance"
 	"gio-mw/token"
+	"gio-mw/wdk"
 	"gio-mw/widget/scroll"
 
+	"gioui.org/io/key"
 	"gioui.org/io/system"
 	"gioui.org/layout"
 	"gioui.org/unit"
@@ -47,11 +49,16 @@ type articleWindow struct {
 	whole    bool
 	// goTo takes the anchors links in the chat ask the open window to go
 	// to.
-	goTo   chan string
-	loaded chan articleLoad
-	cancel context.CancelFunc
-	theme  *token.Theme
-	dark   bool
+	goTo chan string
+	// back and ahead are where the window was before the anchors it went
+	// to, and after them once it went back, as Telegram Desktop's window
+	// steps through its history; backButton and aheadButton step.
+	back, ahead             []int
+	backButton, aheadButton surface
+	loaded                  chan articleLoad
+	cancel                  context.CancelFunc
+	theme                   *token.Theme
+	dark                    bool
 	// themeFonts is the version of the fonts the theme was made with.
 	themeFonts uint64
 	closing    bool
@@ -146,6 +153,7 @@ func (a *articleWindow) layout(gtx layout.Context, animate bool) {
 	p, l := a.page, a.catalog
 	p.animate = animate
 	p.entityMenu.watch(gtx)
+	a.steps(gtx)
 	select {
 	case name := <-a.goTo:
 		a.fragment = name
@@ -171,16 +179,23 @@ func (a *articleWindow) layout(gtx layout.Context, animate bool) {
 		a.scrollToAnchor(gtx, id)
 	}
 	size := gtx.Constraints.Max
+	bar := a.stepsBar(gtx)
+	p.viewHeight = size.Y - bar
 	fillRect(gtx, scheme(gtx).Surface.Color, size)
-	a.list.Layout(gtx, 1, func(gtx layout.Context, _ int) layout.Dimensions {
-		return layout.UniformInset(articleWindowMargin).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-			return layout.N.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-				gtx.Constraints.Max.X = min(gtx.Constraints.Max.X, gtx.Dp(articleWindowWidth))
-				gtx.Constraints.Min = image.Pt(gtx.Constraints.Max.X, 0)
-				return a.article(gtx, l, animate)
+	body := gtx
+	body.Constraints = layout.Exact(image.Pt(size.X, max(size.Y-bar, 0)))
+	offset(body, image.Pt(0, bar), func(gtx layout.Context) layout.Dimensions {
+		return a.list.Layout(gtx, 1, func(gtx layout.Context, _ int) layout.Dimensions {
+			return layout.UniformInset(articleWindowMargin).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				return layout.N.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+					gtx.Constraints.Max.X = min(gtx.Constraints.Max.X, gtx.Dp(articleWindowWidth))
+					gtx.Constraints.Min = image.Pt(gtx.Constraints.Max.X, 0)
+					return a.article(gtx, l, animate)
+				})
 			})
 		})
 	})
+	a.layoutSteps(gtx, l)
 	p.keyboardEvents(gtx)
 	p.botUpdate(l)
 	p.errorMu.Lock()
@@ -211,6 +226,8 @@ func (a *articleWindow) article(gtx layout.Context, l localization.Catalog, anim
 	if r.article == nil {
 		return layout.Dimensions{}
 	}
+	// The article is the window's one item, under its margin.
+	r.viewTop, r.viewKnown = gtx.Dp(articleWindowMargin)-a.list.Position.Offset, true
 	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions { return p.articleLayout(gtx, r, m, l, animate) }),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
@@ -267,8 +284,109 @@ func (a *articleWindow) scrollToAnchor(gtx layout.Context, id model.MessageID) {
 	if !ok {
 		return
 	}
-	a.list.Position = layout.Position{First: 0, Offset: gtx.Dp(articleWindowMargin) + top, BeforeEnd: true}
+	a.back, a.ahead = append(a.back, a.list.Position.Offset), nil
+	a.scrollTo(gtx.Dp(articleWindowMargin) + top)
+}
+
+// scrollTo puts the window y px into the article.
+func (a *articleWindow) scrollTo(y int) {
+	a.list.Position = layout.Position{First: 0, Offset: max(y, 0), BeforeEnd: true}
 	a.invalidate()
+}
+
+// step goes back to where the window was before the last anchor it went
+// to, or ahead again to where it was before it went back.
+func (a *articleWindow) step(back bool) {
+	from, to := &a.back, &a.ahead
+	if !back {
+		from, to = to, from
+	}
+	if len(*from) == 0 {
+		return
+	}
+	y := (*from)[len(*from)-1]
+	*from = (*from)[:len(*from)-1]
+	*to = append(*to, a.list.Position.Offset)
+	a.scrollTo(y)
+}
+
+// steps takes the buttons and keys that step back and ahead: Alt with an
+// arrow, or ⌘ with a bracket, as in browsers. They come before the text's
+// keys, which move a selection by words with Alt and an arrow.
+func (a *articleWindow) steps(gtx layout.Context) {
+	if a.backButton.Clicked(gtx) {
+		a.step(true)
+	}
+	if a.aheadButton.Clicked(gtx) {
+		a.step(false)
+	}
+	for {
+		ev, ok := gtx.Event(
+			key.Filter{Name: key.NameLeftArrow, Required: key.ModAlt},
+			key.Filter{Name: key.NameRightArrow, Required: key.ModAlt},
+			key.Filter{Name: "[", Required: key.ModShortcut},
+			key.Filter{Name: "]", Required: key.ModShortcut},
+		)
+		if !ok {
+			break
+		}
+		if e, ok := ev.(key.Event); ok && e.State == key.Press {
+			a.step(e.Name == key.NameLeftArrow || e.Name == "[")
+		}
+	}
+}
+
+// stepsBar is how high the bar of the steps back and ahead is: none
+// until the window went to an anchor, and then always, so that the
+// article does not move under it again.
+func (a *articleWindow) stepsBar(gtx layout.Context) int {
+	if len(a.back)+len(a.ahead) == 0 {
+		return 0
+	}
+	return gtx.Dp(48)
+}
+
+// layoutSteps draws the bar of the buttons that step back and ahead, each
+// dimmed while there is nowhere to step to, as Telegram Desktop's window
+// has them over its page.
+func (a *articleWindow) layoutSteps(gtx layout.Context, l localization.Catalog) {
+	bar := a.stepsBar(gtx)
+	if bar == 0 {
+		return
+	}
+	sc := scheme(gtx)
+	fillRect(gtx, sc.Surface.Color, image.Pt(gtx.Constraints.Max.X, bar))
+	offset(gtx, image.Pt(0, bar-max(gtx.Dp(1), 1)), func(gtx layout.Context) layout.Dimensions {
+		fillRect(gtx, sc.OutlineVariant, image.Pt(gtx.Constraints.Max.X, max(gtx.Dp(1), 1)))
+		return layout.Dimensions{}
+	})
+	x := gtx.Dp(4)
+	for _, s := range []struct {
+		enabled bool
+		button  *surface
+		icon    wdk.IconWidget
+		label   string
+	}{{len(a.back) > 0, &a.backButton, iconBack, l.T("rich.back")}, {len(a.ahead) > 0, &a.aheadButton, iconForward, l.T("rich.forward")}} {
+		offset(gtx, image.Pt(x, 0), func(gtx layout.Context) layout.Dimensions {
+			if !s.enabled {
+				gtx = gtx.Disabled()
+			}
+			size := image.Pt(gtx.Dp(48), bar)
+			gtx.Constraints = layout.Exact(size)
+			content := sc.Surface.OnColor
+			if !s.enabled {
+				content = content.SetOpacity(.38)
+			}
+			style := surfaceStyle{radius: size.Y / 2, background: content.SetOpacity(0), content: content, button: s.label}
+			return s.button.Layout(gtx, size, style, func(gtx layout.Context) layout.Dimensions {
+				return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+					gtx.Constraints = layout.Exact(image.Pt(gtx.Dp(24), gtx.Dp(24)))
+					return s.icon(gtx, content)
+				})
+			})
+		})
+		x += gtx.Dp(48)
+	}
 }
 
 func (a *articleWindow) Locale() system.Locale {

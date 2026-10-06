@@ -12,7 +12,10 @@ import (
 	"gio-mw/defaults/schemes"
 	"gio-mw/wdk"
 
+	"gioui.org/f32"
 	"gioui.org/io/input"
+	"gioui.org/io/key"
+	"gioui.org/io/pointer"
 	"gioui.org/layout"
 	"gioui.org/op"
 	"gioui.org/unit"
@@ -112,5 +115,36 @@ func TestArticleWindowMissingFragment(t *testing.T) {
 	h.load()
 	if got := h.view.page.toast.Text(); got != localization.For("en").T("rich.anchor_missing") {
 		t.Fatalf("toast %q", got)
+	}
+}
+
+// The window steps back to where it was before an anchor it went to, and
+// ahead again, by Alt with an arrow and by its buttons, shown while there
+// is somewhere to step to.
+func TestArticleWindowStepsBackAndAhead(t *testing.T) {
+	page := anchorPage(false)
+	h := newArticleViewHarness(t, page, page, "")
+	v := h.view
+	r := v.page.rows[v.message.Key.MessageID]
+	v.page.goToAnchor(r, "deep end", localization.For("en"))
+	for range 4 {
+		h.frame()
+	}
+	there := v.list.Position.Offset
+	if there == 0 || len(v.back) != 1 {
+		t.Fatalf("the anchor is at %d, back %v", there, v.back)
+	}
+	h.router.Queue(key.Event{Name: key.NameLeftArrow, Modifiers: key.ModAlt, State: key.Press})
+	h.frame()
+	if got := v.list.Position.Offset; got != 0 || len(v.ahead) != 1 {
+		t.Fatalf("back, the window is at %d, ahead %v", got, v.ahead)
+	}
+	// The button ahead is the second in the bar over the article.
+	for _, kind := range []pointer.Kind{pointer.Press, pointer.Release} {
+		h.router.Queue(pointer.Event{Kind: kind, Source: pointer.Mouse, Position: f32.Pt(4+48+24, 24), Buttons: pointer.ButtonPrimary})
+		h.frame()
+	}
+	if got := v.list.Position.Offset; got != there || len(v.ahead) != 0 || len(v.back) != 1 {
+		t.Fatalf("ahead, the window is at %d, not %d", got, there)
 	}
 }

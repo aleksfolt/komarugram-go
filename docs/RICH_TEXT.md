@@ -1027,7 +1027,7 @@ large and needs a dynamic linker.
 | 0 | Finish ordinary entities: `pre` as a block with its language (kept in `model.Entity`) and copy button; blockquote with its bar and `collapsed`; clickable hashtag, bot command, email, phone; formatted date | — |
 | 1 | `model.RichPage`; conversion from `tg` (RichText into runs and entities, PageBlock into blocks); stored in the cache's JSON; `part` and `messages.getRichMessage`; summary text for the chat list, replies and FTS | gotd v0.162.0 (layer 229) |
 | 2 | Article engine: headings, nested lists with numbering and checkboxes, quotes, code, divider, tables with spans and alignment, details, media blocks, sub- and superscript, marks, anchors, inline images, buttons; selection across blocks | — |
-| 3 | The engine in the bubble: links to anchors, "Show more" and the article window (done); heights in `HeightIndex` and the layout cache, lazy media, a table's sideways scrolling | — |
+| 3 | The engine in the bubble: links to anchors, "Show more" and the article window with its steps back and ahead, heights in `HeightIndex` and the layout cache, lazy media, a table's sideways scrolling (done); the window's search, zoom and sharing | — |
 | 3b | Drafts bots stream: `sendMessageTextDraftAction`, `sendMessageRichMessageDraftAction`, `sendMessageStopDraftAction`, the Stop button (done) | — |
 | 4 | Formulas: the RaTeX module, its build script, the Go drawer of its display list, KaTeX fonts, fallback font for Cyrillic, size bounds | decided: RaTeX |
 | 4a | Code highlighting for `pre`, rich messages and `.md`: the Go port of libprisma, worker goroutine, LRU cache, deadlines, theme colors | decided: regexp2 v1.12.0 |
@@ -1412,10 +1412,14 @@ activateRichPagePreparedLink`, `Iv::Instance::showRichMessage`):
   of its own, buttons. Telegram for Android expands the article in its
   bubble instead (`ChatActivity.loadFullRichMessage`); the maintainer
   chose the window, which the `.md` viewer and Instant View will share.
-- **Left**: tdesktop's window has back and forward through the anchors
-  gone to, search, zoom, sharing and its menu; an inline anchor goes to
-  the top of its block, not its line; heights in the layout cache, lazy
-  media and a table's sideways scrolling remain.
+- **Steps back and ahead** (2026-10-06): once the window went to an
+  anchor, a bar over the article has buttons that step back to where it
+  was and ahead again, dimmed while there is nowhere to step, as tdesktop's
+  window's history; Alt with an arrow, or ⌘ with a bracket, step too. The
+  bar stays, so that the article does not move under it again.
+- **Left**: tdesktop's window has search, zoom, sharing and its menu
+  (search belongs with the `.md` viewer, stage 5); an inline anchor goes
+  to the top of its block, not its line.
 - **Tests**: a link to an anchor in closed details scrolls the history
   there (a double click at its top selects a word of it), a missing
   anchor tells so or opens the whole article, the anchors kept and laid
@@ -1428,6 +1432,45 @@ activateRichPagePreparedLink`, `Iv::Instance::showRichMessage`):
   "All Types" links (`media` scrolls to its heading), and "Long
   Message", whose button opens the whole screenplay, where a footnote's
   link goes to the footnote and its ↩ back.
+
+### Stage 3: heights, lazy media, wide tables
+
+2026-10-06:
+
+- **Heights** (`ui/article_height.go`): until the history lays a row out
+  it guesses its height, and a rich message's text, its summary, says
+  little of its article's: the guess was 79–91 % short for the demo's and
+  the test's articles, so the scrollbar and the place the history keeps
+  jumped when one was laid out. The guess now walks the article's blocks
+  as the layout sizes them, its media by the same functions
+  (`mediaHeight`, `pairRow`, `slideshowHeight`) and its text by lines of
+  an average letter's width, measured from the layout; it is 1–5 % short
+  at 400, 700 and 1000 px. `RendererRevision` is 16: the layout cache held
+  the heights of rich messages drawn as their summaries, before stage 2.
+- **Lazy media**: the row of a history learns where it is in the view
+  (from the heights, at the history's end from its bottom), and an
+  article's photos and videos more than a view's height from it are not
+  laid out, and so not loaded: their places are kept, as high as they
+  will be. The article window does the same. With 24 photos, opening the
+  chat at its end asks for the last ones only.
+- **Wide tables**: columns are at least as wide as their longest word,
+  and as their text up to tdesktop's least width (`minColumnWidth`, 96 px
+  at its 13 px text); when that does not fit, the table keeps those
+  widths and scrolls sideways in its view, by the wheel and a touchpad,
+  and by the thumb of a scrollbar under it (tdesktop's: 3 px under it,
+  10 px high). Text selects in it as anywhere in the article. Before, the
+  columns shrank under their words, which ran past their cells.
+- **Measured**: a frame of a history showing an article of 500 blocks,
+  the most Telegram allows, takes 2.4–2.6 ms and 0.6 MB here
+  (`BenchmarkLongArticleFrame`); the whole article is laid out each
+  frame, which needs no more for now.
+- **Tests**: the guess within a fifth of the height laid out, the photos
+  asked for at the history's end and at its top, a wide table's columns,
+  its scrolling by the wheel and its thumb, the window's steps by keys
+  and by its button; each fails with its code removed. Live, Linux/X11,
+  in the demo: the wide table in a narrowed window scrolls by the
+  horizontal wheel and its thumb, a word double-clicked in it copies, and
+  the window steps back and ahead.
 
 ### Drafts bots stream
 

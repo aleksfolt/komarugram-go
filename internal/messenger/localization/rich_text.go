@@ -43,6 +43,9 @@ func init() {
 		"rich.show_more":      {"Показать ещё", "Show more"},
 		// The button that stops a draft a bot streams.
 		"rich.stop_draft": {"Остановить", "Stop"},
+		// The article window's steps through the anchors it went to.
+		"rich.back":    {"Назад", "Back"},
+		"rich.forward": {"Вперёд", "Forward"},
 	} {
 		russian[key], english[key] = texts[0], texts[1]
 	}

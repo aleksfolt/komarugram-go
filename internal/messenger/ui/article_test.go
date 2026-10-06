@@ -3,6 +3,7 @@
 package ui
 
 import (
+	"fmt"
 	"image"
 	"strings"
 	"testing"
@@ -231,5 +232,55 @@ func TestArticleAnchors(t *testing.T) {
 	h.frame()
 	if deep, item := h.row.articleState.tops["deep"], tops["item"]; deep <= item {
 		t.Fatalf("opened, the deep anchor is at %d, over the item at %d", deep, item)
+	}
+}
+
+// A table too wide for its article keeps each column as wide as its
+// longest word and scrolls sideways, by the wheel and by its scrollbar's
+// thumb, its text with it.
+func TestArticleWideTableScrolls(t *testing.T) {
+	var cells []model.RichTableCell
+	for i := range 6 {
+		cells = append(cells, model.RichTableCell{Text: richText(fmt.Sprintf("Unbreakablelongwordhere%d и ещё", i))})
+	}
+	page := model.RichPage{Blocks: []model.RichBlock{{Kind: model.RichTable, Rows: []model.RichTableRow{{Cells: cells}, {Cells: cells}}}}}
+	h := newEntityHarness(t, richMessage(page), model.KindUser)
+	// at is where the first line of the cell that says text is: its
+	// glyphs', which run past the line when a word is too wide for it.
+	at := func(text string) image.Rectangle {
+		for _, f := range h.row.text.fragments {
+			if strings.HasPrefix(h.row.runs[f.Index].Text, text) {
+				r := f.Bounds
+				for _, c := range f.Clusters {
+					r = r.Union(c.Bounds)
+				}
+				return r
+			}
+		}
+		t.Fatalf("no fragment says %q", text)
+		return image.Rectangle{}
+	}
+	first, last := at("Unbreakablelongwordhere0"), at("Unbreakablelongwordhere5")
+	if last.Max.X <= 400 {
+		t.Fatalf("the table fits: its last cell ends at %d", last.Max.X)
+	}
+	if next := at("Unbreakablelongwordhere1"); first.Max.X >= next.Min.X {
+		t.Fatalf("the first cell's word, to %d, runs into the next one's, from %d", first.Max.X, next.Min.X)
+	}
+	if h.row.text.size.Y < first.Max.Y*2+10 {
+		t.Fatalf("no scrollbar under the table: the article is %d high", h.row.text.size.Y)
+	}
+	h.router.Queue(pointer.Event{Kind: pointer.Scroll, Source: pointer.Mouse, Position: f32.Pt(50, float32(first.Min.Y+2)), Scroll: f32.Pt(60, 0)})
+	h.frame()
+	if moved := at("Unbreakablelongwordhere0"); moved.Min.X != first.Min.X-60 {
+		t.Fatalf("scrolled 60 px, the first cell moved from %d to %d", first.Min.X, moved.Min.X)
+	}
+	// The thumb, under the table at its left, drags the table along.
+	before := at("Unbreakablelongwordhere0").Min.X
+	y := float32(h.row.text.size.Y - 5)
+	x := float32(20 + 60*400/(last.Max.X+8-400))
+	h.pointerDrag(f32.Pt(x, y), f32.Pt(x+40, y))
+	if after := at("Unbreakablelongwordhere0").Min.X; after >= before {
+		t.Fatalf("dragging the thumb moved the first cell from %d to %d", before, after)
 	}
 }

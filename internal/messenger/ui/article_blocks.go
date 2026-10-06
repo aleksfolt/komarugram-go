@@ -9,10 +9,13 @@ import (
 	"gio-mw/token"
 	"gio-mw/wdk"
 
+	"gioui.org/gesture"
+	"gioui.org/io/pointer"
 	"gioui.org/layout"
 	"gioui.org/op"
 	"gioui.org/op/clip"
 	"gioui.org/op/paint"
+	"gioui.org/unit"
 
 	"komarugram/internal/messenger/model"
 )
@@ -28,8 +31,18 @@ func (a *articleDraw) measure(gtx layout.Context, leaf int, max image.Point) ima
 	gtx.Constraints = layout.Constraints{Max: max}
 	dims := a.p.textFlow(gtx, a.r, &a.doc.leaves[leaf], image.Point{}, a.animate)
 	macro.Stop()
+	// A word wider than max runs past it, and the size does not say so:
+	// the lines of text do.
+	size := dims.Size
+	for _, f := range a.r.text.fragments[start:] {
+		for _, c := range f.Clusters {
+			if c.Bounds.Max.X > size.X {
+				size.X = c.Bounds.Max.X
+			}
+		}
+	}
 	a.r.text.fragments = a.r.text.fragments[:start]
-	return dims.Size
+	return size
 }
 
 // shiftFragments moves the fragments of text from the first on by d, for
@@ -65,6 +78,9 @@ func (a *articleDraw) table(gtx layout.Context, b *articleBlock, origin image.Po
 		left[i+1] = left[i] + w
 	}
 	tableWidth := left[len(columns)]
+	// A table wider than the article scrolls sideways under its view.
+	scroll := a.r.articleState.tableScroll(b.id)
+	shift := scroll.update(gtx, max(0, tableWidth-width), width)
 	// Each cell is laid out where it starts, then moved to its row once
 	// the heights of the rows are known.
 	type laid struct {
@@ -115,7 +131,17 @@ func (a *articleDraw) table(gtx layout.Context, b *articleBlock, origin image.Po
 	}
 	size := image.Pt(tableWidth, top[len(heights)])
 	radius := gtx.Dp(6)
+	view := image.Pt(min(tableWidth, width), size.Y)
 	offset(gtx, image.Pt(0, y), func(gtx layout.Context) layout.Dimensions {
+		defer clip.Rect{Max: view}.Push(gtx.Ops).Pop()
+		if tableWidth > width {
+			// Its view takes the sideways scrolling; what is pressed in it
+			// reaches the text under it.
+			pass := pointer.PassOp{}.Push(gtx.Ops)
+			scroll.scroll.Add(gtx.Ops)
+			pass.Pop()
+		}
+		defer op.Offset(image.Pt(-shift, 0)).Push(gtx.Ops).Pop()
 		defer clip.UniformRRect(image.Rectangle{Max: size}, radius).Push(gtx.Ops).Pop()
 		for _, c := range cells {
 			col := min(c.place.column, len(columns))
@@ -148,7 +174,7 @@ func (a *articleDraw) table(gtx layout.Context, b *articleBlock, origin image.Po
 			// The cell was laid out at the top of the table.
 			for i := c.first; i < c.through; i++ {
 				f := &a.r.text.fragments[i]
-				d := image.Pt(0, y+at.Y)
+				d := image.Pt(-shift, y+at.Y)
 				f.Bounds = f.Bounds.Add(d)
 				for j := range f.Clusters {
 					f.Clusters[j].Bounds = f.Clusters[j].Bounds.Add(d)
@@ -178,26 +204,124 @@ func (a *articleDraw) table(gtx layout.Context, b *articleBlock, origin image.Po
 		}
 		return layout.Dimensions{Size: size}
 	})
-	return y + size.Y
+	y += size.Y
+	if tableWidth > width {
+		y += scroll.bar(gtx, y, tableWidth, width)
+	}
+	return y
 }
 
-// columnWidths shares width between a table's columns: each as wide as its
-// widest cell when they all fit, and spread to fill it; otherwise each at
-// least as wide as its narrowest useful width, the rest shared as their text
-// asks for it.
+// tableScroll is how far a table wider than its article is scrolled
+// sideways, by the wheel, a touchpad or its scrollbar.
+type tableScroll struct {
+	x      int
+	scroll gesture.Scroll
+	drag   gesture.Drag
+	// from and start are where a drag of the thumb began, and x then.
+	from  float32
+	start int
+}
+
+func (s *articleState) tableScroll(id int) *tableScroll {
+	if s.scrolls == nil {
+		s.scrolls = map[int]*tableScroll{}
+	}
+	t := s.scrolls[id]
+	if t == nil {
+		t = new(tableScroll)
+		s.scrolls[id] = t
+	}
+	return t
+}
+
+// update applies the scrolling and the drags of the thumb since the last
+// frame, and returns how far the table is scrolled: up to most, for a view
+// width wide.
+func (s *tableScroll) update(gtx layout.Context, most, width int) int {
+	if most <= 0 {
+		s.x = 0
+		return 0
+	}
+	s.x += s.scroll.Update(gtx.Metric, gtx.Source, gtx.Now, gesture.Horizontal, pointer.ScrollRange{Min: -s.x, Max: most - s.x}, pointer.ScrollRange{})
+	for {
+		e, ok := s.drag.Update(gtx.Metric, gtx.Source, gesture.Horizontal)
+		if !ok {
+			break
+		}
+		switch e.Kind {
+		case pointer.Press:
+			s.from, s.start = e.Position.X, s.x
+		case pointer.Drag:
+			// The thumb moves over the track as the table under the view.
+			track := width - s.thumb(most+width, width)
+			if track > 0 {
+				s.x = s.start + int((e.Position.X-s.from)*float32(most)/float32(track))
+			}
+		}
+	}
+	s.x = min(max(s.x, 0), most)
+	return s.x
+}
+
+// thumb is how wide the thumb of a view width wide over a table total wide
+// is: as the view of the table, at least 20 dp.
+func (s *tableScroll) thumb(total, width int) int {
+	return max(width*width/max(total, 1), min(width, 20))
+}
+
+// bar draws the scrollbar under a table total wide in a view width wide,
+// at y, as Telegram Desktop's (messageMarkdownTable: 3 px under it, 10 px
+// high), and returns how high it is with the space over it.
+func (s *tableScroll) bar(gtx layout.Context, y, total, width int) int {
+	skip, h := gtx.Dp(3), gtx.Dp(10)
+	thumb := max(s.thumb(total, width), gtx.Dp(20))
+	x := 0
+	if most := total - width; most > 0 {
+		x = s.x * (width - thumb) / most
+	}
+	sc := scheme(gtx)
+	offset(gtx, image.Pt(0, y+skip), func(gtx layout.Context) layout.Dimensions {
+		track := image.Rect(0, h/2-h/6, width, h/2+h/6)
+		paint.FillShape(gtx.Ops, sc.OutlineVariant.SetOpacity(.5).AsNRGBA(), clip.UniformRRect(track, track.Dy()/2).Op(gtx.Ops))
+		rect := image.Rect(x, 0, x+thumb, h)
+		col := sc.SurfaceVariant.OnColor.SetOpacity(.45)
+		if s.drag.Dragging() {
+			col = sc.SurfaceVariant.OnColor.SetOpacity(.7)
+		}
+		paint.FillShape(gtx.Ops, col.AsNRGBA(), clip.UniformRRect(rect, h/2).Op(gtx.Ops))
+		area := clip.Rect(rect).Push(gtx.Ops)
+		pointer.CursorPointer.Add(gtx.Ops)
+		s.drag.Add(gtx.Ops)
+		area.Pop()
+		return layout.Dimensions{}
+	})
+	return skip + h
+}
+
+// columnWidths shares width between a table's columns, as Telegram
+// Desktop's ComputeTableColumnWidths does: each as wide as its widest cell
+// when they all fit, and spread to fill it; otherwise each at least as wide
+// as its longest word, and as its text up to a least width, the rest shared
+// as their text asks for it. When even that does not fit, the columns are
+// at those widths, wider than width together, and the table scrolls.
 func (a *articleDraw) columnWidths(gtx layout.Context, b *articleBlock, places [][]tablePlace, width, padX int) []int {
 	n := b.columns
 	natural := make([]int, n)
 	least := make([]int, n)
-	floor := gtx.Dp(56) + 2*padX
+	// tdesktop's minColumnWidth, 96 px at its 13 px text.
+	floor := gtx.Dp(118)
 	for i, row := range places {
 		for j, p := range row {
 			if p.colspan != 1 || p.column >= n {
 				continue
 			}
-			w := a.measure(gtx, b.rows[i].cells[j].leaf, image.Pt(width*8, gtx.Constraints.Max.Y)).X + 2*padX
+			leaf := b.rows[i].cells[j].leaf
+			w := a.measure(gtx, leaf, image.Pt(width*8, gtx.Constraints.Max.Y)).X + 2*padX
+			// Text wraps at words only: laid out 1 px wide, it is as wide
+			// as its longest word.
+			word := a.measure(gtx, leaf, image.Pt(1, gtx.Constraints.Max.Y)).X + 2*padX
 			natural[p.column] = max(natural[p.column], w)
-			least[p.column] = max(least[p.column], min(w, floor))
+			least[p.column] = max(least[p.column], word, min(w, floor))
 		}
 	}
 	total, base := 0, 0
@@ -216,9 +340,8 @@ func (a *articleDraw) columnWidths(gtx layout.Context, b *articleBlock, places [
 			out[i] = natural[i] * width / total
 		}
 	case base >= width:
-		for i := range out {
-			out[i] = least[i] * width / base
-		}
+		copy(out, least)
+		return out
 	default:
 		for i := range out {
 			out[i] = least[i] + (width-base)*(natural[i]-least[i])/max(1, total-base)
@@ -322,6 +445,13 @@ func visual(media model.RichMedia) bool {
 // slideshow, and its caption under it.
 func (a *articleDraw) mediaBlock(gtx layout.Context, b *articleBlock, origin image.Point) int {
 	width := gtx.Constraints.Max.X
+	if a.lazy {
+		if h := mediaBlockHeight(gtx.Metric, b, width); origin.Y+h < a.lo || origin.Y > a.hi {
+			// Media far from the view are not loaded; their place is kept.
+			fillRounded(gtx, scheme(gtx).SurfaceVariant.Color.SetOpacity(.55), image.Pt(width, h), gtx.Dp(6))
+			return a.below(gtx, b.caption, origin, 0, h, 6)
+		}
+	}
 	y := 0
 	switch {
 	case len(b.media) == 1:
@@ -342,13 +472,7 @@ func (a *articleDraw) mediaItem(gtx layout.Context, media model.RichMedia, width
 	}
 	crop := height > 0
 	if height == 0 {
-		height = width * 9 / 16
-		if media.Media.Width > 0 && media.Media.Height > 0 {
-			height = width * media.Media.Height / media.Media.Width
-		}
-		if bounded := min(max(height, gtx.Dp(80)), gtx.Dp(480)); bounded != height {
-			height, crop = bounded, true
-		}
+		height, crop = mediaHeight(gtx.Metric, media, width)
 	}
 	size := image.Pt(width, height)
 	msg := mediaMessage(a.m, media)
@@ -357,6 +481,48 @@ func (a *articleDraw) mediaItem(gtx layout.Context, media model.RichMedia, width
 		gtx.Constraints = layout.Exact(size)
 		return a.p.mediaTile(gtx, a.mediaRow(media.Media.ID), msg, size, crop, a.l, a.animate)
 	}).Size.Y
+}
+
+// mediaHeight is how high a photo or a video is drawn width wide: as its
+// shape asks for, bounded, and then cropped to it.
+func mediaHeight(m unit.Metric, media model.RichMedia, width int) (height int, crop bool) {
+	height = width * 9 / 16
+	if media.Media.Width > 0 && media.Media.Height > 0 {
+		height = width * media.Media.Height / media.Media.Width
+	}
+	if bounded := min(max(height, m.Dp(80)), m.Dp(480)); bounded != height {
+		return bounded, true
+	}
+	return height, false
+}
+
+// pairRow is where a collage puts two photos or videos side by side, width
+// wide: as high as fits them, the first w0 wide.
+func pairRow(m unit.Metric, row [2]model.RichMedia, width int) (h, w0 int) {
+	gap := m.Dp(2)
+	ratio := func(m model.RichMedia) float32 {
+		if m.Media.Width > 0 && m.Media.Height > 0 {
+			return float32(m.Media.Width) / float32(m.Media.Height)
+		}
+		return 1
+	}
+	r0, r1 := ratio(row[0]), ratio(row[1])
+	h = int(float32(width-gap) / (r0 + r1))
+	h = min(max(h, m.Dp(60)), m.Dp(320))
+	w0 = min(max(int(float32(h)*r0), m.Dp(40)), width-gap-m.Dp(40))
+	return h, w0
+}
+
+// slideshowHeight is how high a slideshow of media is, width wide: as its
+// highest item, so that it does not jump.
+func slideshowHeight(m unit.Metric, media []model.RichMedia, width int) int {
+	height := m.Dp(160)
+	for _, item := range media {
+		if visual(item) && item.Media.Width > 0 && item.Media.Height > 0 {
+			height = max(height, min(width*item.Media.Height/item.Media.Width, m.Dp(480)))
+		}
+	}
+	return height
 }
 
 // collage draws items two to a row, each row as high as fits them side
@@ -381,16 +547,7 @@ func (a *articleDraw) collage(gtx layout.Context, items []model.RichMedia, width
 			}
 			continue
 		}
-		ratio := func(m model.RichMedia) float32 {
-			if m.Media.Width > 0 && m.Media.Height > 0 {
-				return float32(m.Media.Width) / float32(m.Media.Height)
-			}
-			return 1
-		}
-		r0, r1 := ratio(row[0]), ratio(row[1])
-		h := int(float32(width-gap) / (r0 + r1))
-		h = min(max(h, gtx.Dp(60)), gtx.Dp(320))
-		w0 := min(max(int(float32(h)*r0), gtx.Dp(40)), width-gap-gtx.Dp(40))
+		h, w0 := pairRow(gtx.Metric, [2]model.RichMedia{row[0], row[1]}, width)
 		pos := image.Pt(0, y)
 		offset(gtx, pos, func(gtx layout.Context) layout.Dimensions {
 			return layout.Dimensions{Size: image.Pt(w0, a.mediaItem(gtx, row[0], w0, h))}
@@ -426,13 +583,7 @@ func (a *articleDraw) slideshow(gtx layout.Context, b *articleBlock, width int) 
 		current++
 	}
 	s.slides[b.id] = current
-	// The frame is as high as its highest item, so that it does not jump.
-	height := gtx.Dp(160)
-	for _, m := range b.media {
-		if visual(m) && m.Media.Width > 0 && m.Media.Height > 0 {
-			height = max(height, min(width*m.Media.Height/m.Media.Width, gtx.Dp(480)))
-		}
-	}
+	height := slideshowHeight(gtx.Metric, b.media, width)
 	a.mediaItem(gtx, b.media[current], width, height)
 	button := gtx.Dp(32)
 	for i, glyph := range []wdk.IconWidget{iconChevronLeft, iconChevron} {

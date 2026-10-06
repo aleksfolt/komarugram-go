@@ -158,6 +158,11 @@ func (p *chatPage) row(gtx layout.Context, m model.Message, date bool, join bubb
 		p.rows[m.Key.MessageID] = r
 	}
 	r.refreshDates(gtx, m, l)
+	// Where the article is in the history, as the last frame put it.
+	r.viewKnown = p.rowTopKnown
+	if r.viewKnown {
+		r.viewTop = p.rowTop + r.bodyTop + gtx.Dp(bubblePadTop) + r.articleAbove
+	}
 	if m.ReplyToMessageID != 0 && r.reply.Clicked(gtx) {
 		p.jumpPending = m.ReplyToMessageID
 		p.invalidate()
