@@ -467,6 +467,7 @@ func (s *Store) OpenChat(chat int64) {
 // pages already asked for are of the old history, and are dropped too.
 func (s *Store) Reveal(chat int64, id model.MessageID) {
 	if isThread(chat) {
+		s.revealThreadAt(chat, id)
 		return
 	}
 	s.reveal(chat, id, false)
@@ -1223,7 +1224,7 @@ func (s *Store) mergeUpdate(m model.Message) (chat model.Chat, isNew bool) {
 			sort.Slice(h.Messages, func(i, j int) bool { return h.Messages[i].Key.MessageID < h.Messages[j].Key.MessageID })
 		}
 	}
-	c.mergeThreads(m)
+	c.mergeThreads(m, isNew)
 	refreshTopics := c.noteTopic(m, isNew)
 	p := c.peers[m.Key.ChatID]
 	c.mu.Unlock()
@@ -1303,6 +1304,11 @@ func (s *Store) deleteMessages(ctx context.Context, chat int64, ids []int) (map[
 		for _, m := range h.Messages {
 			if removed[int(m.Key.MessageID)] {
 				c.deleted[m.Key] = true
+				// A thread counts one fewer; a deletion of a message it has
+				// not loaded is not known to be in it.
+				if h.Counted && id != chat {
+					h.Count = max(0, h.Count-1)
+				}
 			} else {
 				out = append(out, m)
 			}

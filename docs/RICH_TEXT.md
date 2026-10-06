@@ -1169,8 +1169,9 @@ stages 2–3. RaTeX, Markdown and Instant View remain later stages.
   than 3 are left, where tdesktop waits until 2 are.
 - **Clicks** (`chatPage.activateRun`):
   - a hashtag or cashtag searches the chat it is clicked in from its first
-    page, a private chat included, as the maintainer asked (2026-10-06).
-    Telegram Desktop searches all chats from a private chat;
+    page, a private chat, a topic and a post's comments included, as the
+    maintainer asked (2026-10-06). Telegram Desktop searches all chats
+    from a private chat, and the whole forum from a topic;
   - a command is sent; in a group, with the username of the bot whose
     message it is, unless it names a bot (`model.BotUsernames`, the
     store's peers);
@@ -1196,7 +1197,7 @@ stages 2–3. RaTeX, Markdown and Instant View remain later stages.
 - **Tests**, each checked with its fix removed: conversion and the cache;
   runs' actions; dates replaced with entities moved, and hostile ranges;
   date texts and when relative ones change; the hashtag's search in a
-  group and a private chat;
+  group, a private chat and a thread;
   commands with and without the bot's username; the phone and card menus,
   copying and the profile; the date menu at the press, also when the
   press and the release come in one frame; Escape; a late answer of a

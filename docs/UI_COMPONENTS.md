@@ -269,7 +269,15 @@ size-stability fixes remain in place.
   chat list's: `surface`, icon plate (`fillRounded`, the topic's colour, a house
   for General, `drawPin`/lock for the marks), badges through `drawBadgeRight`.
   A topic opens as `commentsView{topic: true}` shown by `layoutComments` on
-  the thread's `chatPage`, whose `topic` flag makes it read what it shows.
+  the thread's `chatPage`, whose `topic` flag makes it read what it shows;
+  its header tells how many messages it has (`topicCount`, from the
+  thread's `History.Count`, the topic's first message not counted, as
+  Telegram Desktop's). The search button at the end of the forum's header
+  (`forum_search.go`, `model.ForumSearcher`) searches all the topics: a
+  field over the header, as a chat's search has it (`layoutSearchField`),
+  and what is found in place of the topics, each message drawn as its
+  topic's row draws its last one; a click opens the topic at the message
+  (`OpenTopicAt`), tinted. Going back finds the search as it was.
   `FORUM_PNG` saves the list.
 - **Message sent** (`history_send.go`): a message the composer sent, when it
   shows at the end of a history that is at its end, flies up from the
@@ -418,7 +426,11 @@ size-stability fixes remain in place.
   menu buttons at the end of a chat's header. The search is a field over
   the header (`model.ChatSearcher`) with a counter and buttons to the older
   and newer found messages; the one shown is tinted for a moment
-  (`highlight`). The menu is a `contextMenu` under its button.
+  (`highlight`). The menu is a `contextMenu` under its button. A thread's
+  header, a topic's or a post's comments', has the search only; it
+  searches the thread (`top_msg_id`), and a found message the thread has
+  not loaded loads it around the message (`Reveal`). A hashtag clicked
+  searches the chat it is in the same way.
 - **Message shot** (`snapshot.go`): the dialog the selection's snapshot
   button opens, as AyuGram's message shot box: a preview rendered off the
   frame (`buildSnapshot`, `renderSnapshot`), the theme and what it shows,

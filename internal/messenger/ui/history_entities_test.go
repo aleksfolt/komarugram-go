@@ -207,8 +207,12 @@ func entityOf(text, part, kind string) model.Entity {
 func TestHashtagSearches(t *testing.T) {
 	text := "Новости #голанг дня"
 	m := message(text, entityOf(text, "#голанг", "hashtag"))
-	for _, kind := range []model.ChatKind{model.KindGroup, model.KindUser} {
+	for _, kind := range []model.ChatKind{model.KindGroup, model.KindUser, -1} {
 		h := newEntityHarness(t, m, kind)
+		if kind == -1 {
+			// A topic, or a post's comments: a thread of a group.
+			h.page.kind, h.page.threadRoot = model.KindGroup, 7
+		}
 		h.clickText("#голанг")
 		s := &h.page.chatSearch
 		if !s.open || s.field.Text() != "#голанг " {

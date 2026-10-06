@@ -244,6 +244,11 @@ type History struct {
 	// ThreadRoot is the root of a thread chat, such as a post's comments:
 	// replies to it quote nothing, since every message there replies to it.
 	ThreadRoot MessageID
+	// Count is how many messages Telegram counts in a thread chat, a
+	// topic's first message included, once Counted is set: a topic's
+	// header tells it, as Telegram Desktop's does.
+	Count   int
+	Counted bool
 }
 
 // RenderEnvironment identifies every external input that can change a

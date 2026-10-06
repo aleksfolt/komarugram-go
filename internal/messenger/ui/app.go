@@ -453,6 +453,7 @@ func New(w *appwindow.Window, store model.Store, services Services) *App {
 		if _, ok := store.(model.ForumSource); ok {
 			a.forum = newForumPage()
 			a.forum.open = a.openTopic
+			a.forum.openAt = a.openTopicAt
 			a.forum.emoji = a.layoutCustomEmoji
 			if a.comments == nil {
 				a.comments = a.newChatPage(source, store, w)

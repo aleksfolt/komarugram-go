@@ -445,8 +445,10 @@ A forum (a group divided in topics) opens as the list of its topics instead of a
 history, as in Telegram Desktop: the icon of the topic's colour, its title, the last
 message, the unread and mention counters, a pin for a pinned topic and a lock for
 a closed one. A topic opens as a page of its own, like the comments to a post, with
-a way back; messages sent there reply to the topic's first message. Creating and
-editing topics is not done.
+a way back and how many messages it has; messages sent there reply to the topic's
+first message. The forum's header searches all its topics, and a message found
+opens its topic there; a topic's header, and the comments', search the topic.
+Creating and editing topics is not done.
 
 With nothing written, a microphone takes Send's place: it records a voice
 message (`pkg/voice`) through `ffmpeg` — PulseAudio/PipeWire or ALSA on Linux,
