@@ -21,6 +21,9 @@ type SpanStyle struct {
 	Size    unit.Sp
 	Color   color.NRGBA
 	Content string
+	// Shift moves the span down from the top of its line, as a
+	// subscript's: spans of a line are set at its top.
+	Shift unit.Sp
 
 	idx   int
 	start int
@@ -38,6 +41,8 @@ type spanShape struct {
 	size     image.Point
 	ascent   int
 	clusters []Cluster
+	// shift is the span's Shift in pixels.
+	shift int
 }
 
 // Layout renders the span using the provided text shaping.
@@ -311,17 +316,19 @@ func (t TextStyle) Layout(gtx layout.Context, spanFn func(gtx layout.Context, id
 
 		if !forceToNextLine {
 			// store the text shaping results for the line
+			shift := gtx.Sp(span.Shift)
 			lineShapes = append(lineShapes, spanShape{
 				offset:   image.Point{X: lineDims.X},
 				size:     image.Point{X: res.width, Y: res.height},
 				call:     res.call,
 				ascent:   res.ascent,
 				clusters: res.clusters,
+				shift:    shift,
 			})
 			// update the dimensions of the current line
 			lineDims.X += res.width
-			if lineDims.Y < res.height {
-				lineDims.Y = res.height
+			if lineDims.Y < res.height+shift {
+				lineDims.Y = res.height + shift
 			}
 			if lineAscent < res.ascent {
 				lineAscent = res.ascent
@@ -350,7 +357,7 @@ func (t TextStyle) Layout(gtx layout.Context, spanFn func(gtx layout.Context, id
 			for i, shape := range lineShapes {
 				// lay out this span
 				span = spans[i+lineStartIndex]
-				shape.offset.Y = overallSize.Y
+				shape.offset.Y = overallSize.Y + shape.shift
 				if t.Decorate == nil {
 					span.Layout(gtx, shape)
 				} else {

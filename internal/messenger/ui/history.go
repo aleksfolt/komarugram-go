@@ -32,6 +32,7 @@ import (
 	"gioui.org/op"
 	"gioui.org/op/clip"
 	"gioui.org/op/paint"
+	"gioui.org/unit"
 	"gioui.org/widget"
 )
 
@@ -76,6 +77,14 @@ type messageRow struct {
 	// when a relative one among them changes next.
 	language localization.Language
 	datesDue time.Time
+	// key is the message's; article, a rich message prepared for drawing,
+	// and articleState what is kept of it between frames.
+	key          model.MessageKey
+	article      *articleDoc
+	articleState articleState
+	// alone is set for the row of an article's photo, which opens alone,
+	// not among the chat's photos.
+	alone bool
 }
 type chatPage struct {
 	membership membershipControl
@@ -849,12 +858,19 @@ func (p *chatPage) textFlow(gtx layout.Context, r *messageRow, block *messageTex
 	styleIndices := make([]int, 0, len(runs))
 	runeStart := block.runeStart
 	frames := make([]image.Image, len(runs))
+	size, fg := ty.Size, scheme(gtx).Surface.OnColor.AsNRGBA()
+	if s := block.style; s.scale != 0 {
+		size = unit.Sp(float32(size) * s.scale)
+	}
+	if block.style.dim {
+		fg = scheme(gtx).SurfaceVariant.OnColor.AsNRGBA()
+	}
 	for i, run := range runs {
-		st := styledtext.SpanStyle{Font: font.Font{Typeface: ty.Font, Weight: font.Normal}, Size: ty.Size, Content: run.Text, Color: scheme(gtx).Surface.OnColor.AsNRGBA()}
+		st := styledtext.SpanStyle{Font: font.Font{Typeface: ty.Font, Weight: block.style.weight}, Size: size, Content: run.Text, Color: fg}
 		if run.Bold {
 			st.Font.Weight = font.Bold
 		}
-		if run.Italic {
+		if run.Italic || block.style.italic {
 			st.Font.Style = font.Italic
 		}
 		if run.Code {
@@ -862,6 +878,14 @@ func (p *chatPage) textFlow(gtx layout.Context, r *messageRow, block *messageTex
 		}
 		if run.URL != "" || run.Action != "" {
 			st.Color = scheme(gtx).Primary.Color.AsNRGBA()
+		}
+		// A subscript and a superscript are smaller, set at the top of the
+		// line; the subscript lower.
+		if run.Sub || run.Sup {
+			st.Size = unit.Sp(float32(size) * .75)
+		}
+		if run.Sub {
+			st.Shift = unit.Sp(float32(size) * .45)
 		}
 		if run.Emoji != 0 && (!run.Spoiler || r.revealed || !r.text.reveal.started.IsZero()) {
 			msg := model.Message{Kind: model.MessageSticker, Media: &model.MessageMedia{ID: fmt.Sprintf("emoji/%d", run.Emoji), MIMEType: "application/x-custom-emoji"}}
@@ -914,6 +938,7 @@ func (p *chatPage) textFlow(gtx layout.Context, r *messageRow, block *messageTex
 		}
 	}
 	text := styledtext.Text(theme.TextShaper, flowStyles...)
+	text.Alignment = block.style.align
 	if runs[0].Pre {
 		text.WrapPolicy = styledtext.WrapGraphemes
 	}
@@ -932,6 +957,10 @@ func (p *chatPage) textFlow(gtx layout.Context, r *messageRow, block *messageTex
 		run := runs[i]
 		size := f.Bounds.Size()
 		paintContent := func() {
+			if run.Marked {
+				// Marked text is tinted, as Telegram Desktop marks it.
+				fillRounded(gtx, scheme(gtx).Primary.Color.SetOpacity(.18), size, gtx.Dp(2))
+			}
 			draw()
 			if frames[i] != nil {
 				drawImage(gtx, p.images, frames[i], size)

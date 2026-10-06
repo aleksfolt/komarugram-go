@@ -327,7 +327,9 @@ func (p *chatPage) bubbleContent(gtx layout.Context, r *messageRow, m model.Mess
 	if m.Poll != nil {
 		children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions { return pollLayout(gtx, m.Poll, l) }))
 	}
-	if len(m.Attachments) > 1 {
+	if r.article != nil {
+		children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions { return p.articleLayout(gtx, r, m, l, animate) }))
+	} else if len(m.Attachments) > 1 {
 		seen := map[string]bool{}
 		for _, member := range m.Attachments {
 			if member.Text != "" && !seen[member.Text] {

@@ -12,6 +12,9 @@ func init() {
 	TelegramKeys["rich.file"] = "lng_in_dlg_file"
 	TelegramKeys["rich.map"] = "lng_maps_point"
 	TelegramKeys["rich.table"] = "lng_in_dlg_table"
+	TelegramKeys["rich.click_to_view"] = "lng_iv_click_to_view"
+	TelegramKeys["rich.unsupported_title"] = "lng_unsupported_block_title"
+	TelegramKeys["rich.unsupported_text"] = "lng_unsupported_block_text"
 	for key, texts := range map[string][2]string{
 		"text.copy_code": {"Копировать", "Copy"},
 		"text.copied":    {"Текст скопирован", "Text copied"},
@@ -27,6 +30,10 @@ func init() {
 		"rich.file":  {"Файл", "File"},
 		"rich.map":   {"Геопозиция", "Location"},
 		"rich.table": {"Таблица", "Table"},
+		// What an article names rather than shows.
+		"rich.click_to_view":     {"Нажмите, чтобы посмотреть", "Click to View"},
+		"rich.unsupported_title": {"Неподдерживаемый блок", "Unsupported Block"},
+		"rich.unsupported_text":  {"Обновите Telegram, чтобы увидеть эту часть сообщения", "Update Telegram to view this part of the message"},
 	} {
 		russian[key], english[key] = texts[0], texts[1]
 	}

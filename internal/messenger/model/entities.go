@@ -23,6 +23,12 @@ type TextRun struct {
 	// Value, the entity's whole text, and Date, a date's Unix time.
 	Action, Value string
 	Date          int64
+	// Sub, Sup and Marked are a rich text's subscript, superscript and
+	// marked text.
+	Sub, Sup, Marked bool
+	// Button is the inline button of a rich text the run is the label of,
+	// which a click presses; its Action is "button".
+	Button *MessageButton
 }
 
 // actionKinds are the entities a click acts on without a URL.
@@ -81,7 +87,8 @@ func TextRuns(text string, entities []Entity) []TextRun {
 			continue
 		}
 		switch e.Kind {
-		case "bold", "italic", "code", "pre", "underline", "strike", "spoiler", "quote", "emoji", "url", "mention", "email", "phone":
+		case "bold", "italic", "code", "pre", "underline", "strike", "spoiler", "quote", "emoji", "url", "mention", "email", "phone",
+			"sub", "sup", "marked", "math", "button":
 		default:
 			if !actionKinds[e.Kind] {
 				continue
@@ -104,7 +111,7 @@ func TextRuns(text string, entities []Entity) []TextRun {
 			if ev.start {
 				delta = 1
 				switch e.Kind {
-				case "url", "mention", "email", "phone", "hashtag", "cashtag", "bot_command", "bank_card", "date":
+				case "url", "mention", "email", "phone", "hashtag", "cashtag", "bot_command", "bank_card", "date", "button":
 					heap.Push(&links, ev.index)
 				case "emoji":
 					heap.Push(&emojis, ev.index)
@@ -120,8 +127,11 @@ func TextRuns(text string, entities []Entity) []TextRun {
 			end = events[next].pos
 		}
 		run := TextRun{Text: text[boundary[pos]:boundary[end]], Bold: counts["bold"] > 0,
-			Italic: counts["italic"] > 0, Code: counts["code"] > 0 || counts["pre"] > 0,
-			Underline: counts["underline"] > 0, Strike: counts["strike"] > 0, Spoiler: counts["spoiler"] > 0}
+			// A formula ("math") shows its source in the code's font until
+			// formulas are drawn.
+			Italic: counts["italic"] > 0, Code: counts["code"] > 0 || counts["pre"] > 0 || counts["math"] > 0,
+			Underline: counts["underline"] > 0, Strike: counts["strike"] > 0, Spoiler: counts["spoiler"] > 0,
+			Sub: counts["sub"] > 0, Sup: counts["sup"] > 0, Marked: counts["marked"] > 0}
 		if i := blocks.top(active); i >= 0 {
 			e := entities[i]
 			run.Block, run.Pre, run.Quote = i+1, e.Kind == "pre", e.Kind == "quote"
@@ -142,6 +152,8 @@ func TextRuns(text string, entities []Entity) []TextRun {
 				run.URL = "tel:" + value
 			case actionKinds[e.Kind]:
 				run.Action, run.Value, run.Date = e.Kind, value, e.Date
+			case e.Kind == "button" && e.Button != nil:
+				run.Action, run.Value, run.Button = e.Kind, value, e.Button
 			default:
 				run.URL = e.URL
 				if run.URL == "" {

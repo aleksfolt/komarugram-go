@@ -144,3 +144,26 @@ func TestLongCodeTokenWrapsOneLinePerFragment(t *testing.T) {
 		}
 	}
 }
+
+// A shifted span is set lower on its line, as a subscript, and its line is
+// as high as it reaches.
+func TestShiftMovesASpanDown(t *testing.T) {
+	shaper := text.NewShaper(text.NoSystemFonts(), text.WithCollection(gofont.Collection()))
+	plain, size := layoutFragments(t, shaper, nil, 800, SpanStyle{Size: 16, Content: "H"}, SpanStyle{Size: 12, Content: "2"}, SpanStyle{Size: 16, Content: "O"})
+	shifted, shiftedSize := layoutFragments(t, shaper, nil, 800, SpanStyle{Size: 16, Content: "H"}, SpanStyle{Size: 12, Content: "2", Shift: 7}, SpanStyle{Size: 16, Content: "O"})
+	if len(plain) != 3 || len(shifted) != 3 {
+		t.Fatalf("%d and %d fragments", len(plain), len(shifted))
+	}
+	if d := shifted[1].Bounds.Min.Y - plain[1].Bounds.Min.Y; d != 7 {
+		t.Fatalf("the subscript moved %d down", d)
+	}
+	if shifted[1].Clusters[0].Bounds.Min.Y != shifted[1].Bounds.Min.Y {
+		t.Fatal("the subscript's clusters stayed")
+	}
+	if shifted[0].Bounds != plain[0].Bounds || shifted[2].Bounds != plain[2].Bounds {
+		t.Fatal("the spans around it moved")
+	}
+	if shiftedSize.Y < plain[1].Bounds.Dy()+7 || shiftedSize.Y < size.Y {
+		t.Fatalf("the line is %d high, the subscript reaches %d", shiftedSize.Y, plain[1].Bounds.Dy()+7)
+	}
+}

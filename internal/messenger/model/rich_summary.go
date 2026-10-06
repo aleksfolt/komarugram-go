@@ -203,6 +203,32 @@ func (s *summary) list(b RichBlock) {
 	}
 }
 
+// ListMarkers are the markers of list b's items as an article shows them:
+// an ordered item's number as orderedMarker writes it, "•" for the others,
+// and "" for a checkbox, which is drawn.
+func (b RichBlock) ListMarkers() []string {
+	out := make([]string, len(b.Items))
+	number := b.listStart()
+	step := 1
+	if b.Reversed {
+		step = -1
+	}
+	for i, item := range b.Items {
+		if item.Value != nil {
+			number = *item.Value
+		}
+		switch {
+		case item.Checkbox:
+		case b.Ordered:
+			out[i] = orderedMarker(b, item, number)
+		default:
+			out[i] = "•"
+		}
+		number += step
+	}
+	return out
+}
+
 // listStart is the number of an ordered list's first item.
 func (b RichBlock) listStart() int {
 	switch {

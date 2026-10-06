@@ -121,3 +121,43 @@ func TestTextRunsActions(t *testing.T) {
 		t.Errorf("date lost: %+v", got["today"])
 	}
 }
+
+// A rich text's subscripts, superscripts, marks, formulas and inline
+// buttons come through as runs.
+func TestTextRunsRichKinds(t *testing.T) {
+	button := &MessageButton{Kind: "url", URL: "https://telegram.org"}
+	runs := TextRuns("a b c d e", []Entity{
+		{Kind: "sub", Offset: 0, Length: 1}, {Kind: "sup", Offset: 2, Length: 1}, {Kind: "marked", Offset: 4, Length: 1},
+		{Kind: "math", Offset: 6, Length: 1}, {Kind: "button", Offset: 8, Length: 1, Button: button},
+	})
+	got := map[string]TextRun{}
+	for _, r := range runs {
+		got[r.Text] = r
+	}
+	if !got["a"].Sub || !got["b"].Sup || !got["c"].Marked || !got["d"].Code {
+		t.Fatalf("styles lost: %+v", runs)
+	}
+	if e := got["e"]; e.Action != "button" || e.Button != button || e.Value != "e" {
+		t.Fatalf("the button's run: %+v", e)
+	}
+	if got[" "].Sub || got[" "].Code {
+		t.Fatalf("styles leaked: %+v", got[" "])
+	}
+}
+
+// A list's markers are its items' numbers in its style, bullets, and none
+// for checkboxes.
+func TestListMarkers(t *testing.T) {
+	three := 3
+	b := RichBlock{Kind: RichList, Ordered: true, Start: &three, Type: "a", Items: []RichListItem{{}, {Checkbox: true}, {Num: "7)"}, {}}}
+	if got := b.ListMarkers(); len(got) != 4 || got[0] != "c." || got[1] != "" || got[2] != "7)" || got[3] != "f." {
+		t.Fatalf("ordered: %q", got)
+	}
+	b.Reversed, b.Start, b.Type = true, nil, ""
+	if got := b.ListMarkers(); got[0] != "4." || got[3] != "1." {
+		t.Fatalf("reversed: %q", got)
+	}
+	if got := (RichBlock{Kind: RichList, Items: []RichListItem{{}}}).ListMarkers(); got[0] != "•" {
+		t.Fatalf("bullets: %q", got)
+	}
+}

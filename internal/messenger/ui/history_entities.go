@@ -53,9 +53,33 @@ func messageRuns(m model.Message, l localization.Catalog, now time.Time) ([]mode
 
 // newMessageRow is the row of m, with its text's runs.
 func newMessageRow(m model.Message, l localization.Catalog, now time.Time) *messageRow {
-	r := &messageRow{revision: m.ContentRevision, noCopy: m.NoForwards, sender: m.SenderID, source: m.Text, language: l.Language()}
+	r := &messageRow{revision: m.ContentRevision, noCopy: m.NoForwards, sender: m.SenderID, source: m.Text, language: l.Language(), key: m.Key}
 	r.runs, r.datesDue = messageRuns(m, l, now)
+	r.prepareArticle(m, l, now)
 	return r
+}
+
+// prepareArticle prepares m's rich message, when it has one with something
+// to show: its text is the row's runs then, in place of the summary's.
+func (r *messageRow) prepareArticle(m model.Message, l localization.Catalog, now time.Time) {
+	if m.Rich == nil {
+		return
+	}
+	doc := prepareArticle(*m.Rich, l, now)
+	if len(doc.blocks) == 0 {
+		return
+	}
+	old := r.article
+	r.article, r.runs, r.datesDue = doc, doc.runs, doc.datesDue
+	if old == nil {
+		return
+	}
+	// Written again, the article keeps what the reader did with its blocks.
+	for i := range doc.leaves {
+		if i < len(old.leaves) {
+			doc.leaves[i].expanded, doc.leaves[i].action = old.leaves[i].expanded, old.leaves[i].action
+		}
+	}
 }
 
 // refreshDates writes r's dates again when a relative one has changed or
@@ -70,6 +94,7 @@ func (r *messageRow) refreshDates(gtx layout.Context, m model.Message, l localiz
 	}
 	old := r.textBlocks
 	r.runs, r.datesDue = messageRuns(m, l, gtx.Now)
+	r.prepareArticle(m, l, gtx.Now)
 	r.language = l.Language()
 	r.textBlocks = nil
 	r.prepareTextBlocks()
@@ -224,6 +249,13 @@ func (p *chatPage) activateRun(gtx layout.Context, r *messageRow, run model.Text
 	case "date":
 		if run.Date != 0 {
 			p.openEntityMenu(gtx, entityTarget{kind: "date", date: run.Date, text: r.source})
+		}
+		return
+	case "button":
+		// A button in an article's text, pressed as one under a message.
+		if run.Button != nil {
+			a := articleDraw{p: p, r: r, m: model.Message{Key: r.key}, l: localization.For(string(r.language))}
+			a.press(gtx, -1, 0, *run.Button)
 		}
 		return
 	}

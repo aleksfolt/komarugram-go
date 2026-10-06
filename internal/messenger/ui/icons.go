@@ -72,6 +72,8 @@ var (
 	iconReply         = wdk.RequireIconWidget(icons.ContentReply)
 	iconCopy          = wdk.RequireIconWidget(icons.ContentContentCopy)
 	iconLink          = wdk.RequireIconWidget(icons.ContentLink)
+	iconMusic         = wdk.RequireIconWidget(icons.ImageMusicNote)
+	iconPlace         = wdk.RequireIconWidget(icons.MapsPlace)
 	iconForward       = wdk.RequireIconWidget(icons.ContentForward)
 	iconDelete        = wdk.RequireIconWidget(icons.ActionDelete)
 	iconSelect        = wdk.RequireIconWidget(icons.ActionCheckCircle)

@@ -2,8 +2,9 @@
 
 Status: implementation started, 2026-10-04. Stage 0 (code and quote
 blocks; entities clicks act on and formatted dates, 2026-10-06), stage 1
-(reading rich messages, 2026-10-05) and stage 4a (code highlighting,
-2026-10-05) are implemented; see "Implementation progress" below.
+(reading rich messages, 2026-10-05), stage 2 (the article engine, drawn
+in the bubble, 2026-10-06) and stage 4a (code highlighting, 2026-10-05)
+are implemented; see "Implementation progress" below.
 The research notes gather what Telegram sends, how Telegram Desktop shows
 it, what KomaruGram has, and a
 measured comparison of the libraries the work needs: a Markdown parser
@@ -218,11 +219,10 @@ The upgrade was tried in a scratch copy of the repository:
     act on a click, and formatted dates are written in the reader's
     language (stage 0, below). Dropped as `unsupported`, shown as plain
     text: the diff entities and `messageEntityBox`.
-- **Ordinary entity blocks only; no article layout yet.**
 - **`rich_message` is read** (stage 1): `tgstore/rich.go` converts it into
   `model.RichPage`, and the message's text is the page's summary
-  (`model/rich_summary.go`). The bubble shows the summary until the article
-  engine draws the page (stages 2–3).
+  (`model/rich_summary.go`), for the chat list, replies and search. The
+  bubble draws the page as an article (stage 2).
 - **A `.md` file opens in the system's program** (`ui/attachments.go`).
 - **No Instant View, no Markdown parser, no math.** goldmark is in `go.sum`
   only because gotd's tooling (ogen) needs it; it is not linked into the
@@ -1081,9 +1081,9 @@ are not in this plan.
   of `cmd/render-all`; the same example is at the end of demo histories.
 
 Mentions by ID came with the link handling merged from NaixROOT's fork
-(see below); the rest of stage 0, stage 1 and stage 4a are done (below).
-The shared article engine and drawing the page in the bubble remain
-stages 2–3. RaTeX, Markdown and Instant View remain later stages.
+(see below); the rest of stage 0, stages 1 and 2 and stage 4a are done
+(below). What is left of the bubble's article is stage 3; RaTeX,
+Markdown and Instant View remain later stages.
 
 ### Focused validation
 
@@ -1292,11 +1292,102 @@ Live check, Linux/X11, on the maintainer's account with `@richtextdemobot`
   found, each with its location kept.
 - `-demo -no-integrations` shows the demo article's summary.
 
-Left for later stages: drawing the page; the "Show more" button; a full
-article kept offline is replaced only by the next load, not by an edit;
-file references of the page's media renew only through the history's
-existing paths; sub- and superscript, marks and buttons in text are
-drawn as plain text; `textImage` stays `[image]`, as in tdesktop.
+Left for later stages: the "Show more" button; a full article kept
+offline is replaced only by the next load, not by an edit; file
+references of the page's media renew only through the history's
+existing paths; `textImage` stays `[image]`, as in tdesktop. Drawing the
+page is stage 2, below.
+
+### Stage 2: the article engine
+
+2026-10-06, without new dependencies. A rich message is drawn in its
+bubble as an article, in place of its summary, after Telegram Desktop's
+engine (`iv/markdown`) and its `messageMarkdown` style
+(`iv/iv.style`), whose sizes are scaled from its 13 px text to the
+bubble's.
+
+- **One text** (`ui/article.go`, `prepareArticle`): the texts of all the
+  blocks are one sequence of runs, each after a line break that is not
+  drawn. A block's text is a leaf, a `messageTextBlock` that `textFlow`
+  sets as its role says (`flowStyle`: size, weight, the supplementary
+  color, italic, alignment). Selection, copying (a line per block),
+  links, spoilers, entities clicks act on, formatted dates and the
+  colors of code work across blocks as in a message's text; one area of
+  the article's size takes the text's clicks and drags, and what has
+  clicks of its own is laid out over it. Markers of lists are not text.
+- **Blocks** (`ui/article_layout.go`, `ui/article_blocks.go`), with
+  tdesktop's space between them (paragraph 5 dp, heading 12, others 10,
+  channel 7):
+  - headings 1–6 (semibold, 19/13 to 14/13 of the text), paragraphs,
+    footers and author lines (small, supplementary), thinking (italic);
+  - code, as a message's code block: header, copy button, colors;
+  - quotes: of text, as a message's quote block, collapsible; of blocks,
+    on a plate beside a bar; pullquotes in the middle; the author under;
+  - lists: bullets, numbers in the list's style (`RichBlock.ListMarkers`:
+    numbers, letters, Roman numerals, reversed, an item's own), checked
+    and unchecked boxes, items of blocks and nested lists;
+  - tables: a grid with HTML's placing of cells spanning rows and
+    columns, columns as wide as their text and shrunk to fit, header
+    tinted, striped rows, borders, alignment;
+  - details, which open and close by their header;
+  - media: a photo or a video as the history draws them (`mediaTile`,
+    opened alone in the viewer), collages two to a row, a slideshow with
+    buttons to the one before and after and dots, audio and files as
+    cards that open them; captions;
+  - rows of buttons, pressed as the same buttons under a message, in
+    their styles and alignment; buttons in the text too;
+  - a post embedded, with its author and date over its blocks;
+  - cards: an embed ("Click to View", opens its link), a channel, a map
+    (its place), related articles, a block not supported
+    (`lng_unsupported_block_*`);
+  - a divider; an anchor takes no space.
+- **Text** (`model.TextRuns`, `styledtext`): subscripts and superscripts
+  are smaller, the subscript set lower (`SpanStyle.Shift`, new); marked
+  text is tinted; an inline formula is its source in the code's font.
+- **Departures**, until later stages or for good:
+  - a table too wide wraps its cells' text; tdesktop scrolls it
+    sideways;
+  - a formula is its LaTeX source on a plate until RaTeX (stage 4), as
+    tdesktop shows one it cannot draw;
+  - an embed opens its link instead of an embedded page; a map shows its
+    coordinates, not its picture; audio opens in the system's program;
+  - a style that changes inside a word lets the line break there (`H`
+    and `₂O`), as in any message's text: `styledtext` breaks between
+    spans.
+- **Tests**, each checked with its code removed: the runs and leaves of
+  an article, list markers, the placing of table cells, selection and
+  copying across headings, lists and tables, cells drawn under their
+  rows, details opening and closing, a row's button, a button in the
+  text and a code block's copying, the runs of the new entities,
+  `Shift`. `ARTICLE_PNG_DIR` renders the demo's article and one with
+  every kind of block, narrow and wide, in both themes (`render-all -only
+  article`); its photos are gradients, so that the test leaves no crash
+  report.
+- **Live**, Linux/X11. In `-demo -no-integrations`, the demo's article
+  draws in its bubble, its photo loads and opens alone in the viewer,
+  and a keyboard under an article presses. On the maintainer's account,
+  with @richtextdemobot, every screen of its menu draws: "All Types",
+  formatting with sub- and superscripts and marks, code blocks of each
+  language with their copying, headings 1–6, quotes of text and of
+  blocks, lists with checkboxes, details nested two deep, tables,
+  footnotes, pullquotes, formulas as their source, custom emoji, dates
+  of each format (their menu copies the full date), detected links,
+  commands and card numbers (whose menu shows the card's bank), photos,
+  a video, audio, a collage, a slideshow turned with its arrows, a map,
+  and the last part of a long message. Text selects and copies across
+  headings, paragraphs and quotes, a line per block; a photo of a
+  collage opens alone; a row of buttons in an article copies and
+  presses a callback, which the bot answers by editing the message.
+
+Left for stage 3: the "Show more" button of a part and the article's
+window, links to anchors (a click on one does nothing yet), a table's
+sideways scrolling.
+
+Not drawn: a bot's live drafts (`sendMessageTextDraftAction`,
+`sendMessageRichMessageDraftAction`, `sendMessageStopDraftAction`;
+tdesktop's `history/history_streamed_drafts.cpp`). The demo bot's
+"Stream Demo" streams one; the client shows nothing until the message it
+sends at the end.
 
 ### Stage 4a: code highlighting
 

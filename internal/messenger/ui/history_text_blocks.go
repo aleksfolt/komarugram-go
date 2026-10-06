@@ -12,6 +12,9 @@ import (
 	"komarugram/internal/messenger/localization"
 	"komarugram/internal/messenger/styledtext"
 
+	"gioui.org/font"
+	"gioui.org/text"
+
 	"gio-mw/token"
 	"gio-mw/wdk"
 	"gioui.org/io/clipboard"
@@ -34,6 +37,20 @@ type messageTextBlock struct {
 	maxLines              int
 	// code is a code block's colors.
 	code codeHighlight
+	// style is how a flow of an article is set; a message's text is set
+	// with the zero style.
+	style flowStyle
+}
+
+// flowStyle is how a flow of an article is set, against a message's text:
+// its size times scale (1 for 0), its weight, its color the supplementary
+// one when dim, italic, and its alignment.
+type flowStyle struct {
+	scale  float32
+	weight font.Weight
+	dim    bool
+	italic bool
+	align  text.Alignment
 }
 
 func (r *messageRow) prepareTextBlocks() {
@@ -75,24 +92,30 @@ func (r *messageRow) copyTextBlock(b *messageTextBlock) string {
 	return text.String()
 }
 
+// textBlockAction does what b's button was pressed for: a code block's
+// copies its text, a collapsed quote's opens or closes it.
+func (p *chatPage) textBlockAction(gtx layout.Context, r *messageRow, b *messageTextBlock, l localization.Catalog) {
+	if !b.action.Clicked(gtx) {
+		return
+	}
+	run := r.runs[b.first]
+	if run.Pre {
+		if text := r.copyTextBlock(b); text != "" {
+			gtx.Execute(clipboard.WriteCmd{Type: "application/text", Data: io.NopCloser(strings.NewReader(text))})
+			p.toast.Show(l.T("text.copied"))
+		}
+	} else if run.Quote && run.Collapsed {
+		b.expanded = !b.expanded
+		gtx.Execute(op.InvalidateCmd{})
+	}
+}
+
 func (p *chatPage) richText(gtx layout.Context, r *messageRow, l localization.Catalog, animate bool) layout.Dimensions {
 	end := p.trace.Begin("history.rich-text")
 	defer end()
 	r.prepareTextBlocks()
 	for i := range r.textBlocks {
-		b := &r.textBlocks[i]
-		if b.action.Clicked(gtx) {
-			run := r.runs[b.first]
-			if run.Pre {
-				if text := r.copyTextBlock(b); text != "" {
-					gtx.Execute(clipboard.WriteCmd{Type: "application/text", Data: io.NopCloser(strings.NewReader(text))})
-					p.toast.Show(l.T("text.copied"))
-				}
-			} else if run.Quote && run.Collapsed {
-				b.expanded = !b.expanded
-				gtx.Execute(op.InvalidateCmd{})
-			}
-		}
+		p.textBlockAction(gtx, r, &r.textBlocks[i], l)
 	}
 	p.textEvents(gtx, r, animate)
 	r.text.fragments = r.text.fragments[:0]

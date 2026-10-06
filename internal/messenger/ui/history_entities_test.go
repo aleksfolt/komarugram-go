@@ -107,7 +107,11 @@ func (h *entityHarness) frame() {
 	h.page.keyboardEvents(gtx)
 	h.page.chatSearchUpdate(gtx)
 	h.row.refreshDates(gtx, h.m, h.l)
-	h.page.richText(gtx, h.row, h.l, false)
+	if h.row.article != nil {
+		h.page.articleLayout(gtx, h.row, h.m, h.l, false)
+	} else {
+		h.page.richText(gtx, h.row, h.l, false)
+	}
 	h.page.entityMenuLayout(gtx, h.l)
 	h.router.Frame(gtx.Ops)
 	h.now = h.now.Add(16 * time.Millisecond)

@@ -117,6 +117,17 @@ light and dark. `CODE_COLORS_PNG_DIR=/tmp/code go test
 ./internal/messenger/ui -run TestRenderCodeColors` (`render-all -only
 code-colors`) draws JavaScript, Python, HTML and a diff in both themes.
 
+A rich message is an article (`article.go`, `article_layout.go`,
+`article_blocks.go`): `prepareArticle` makes its blocks' texts one
+sequence of runs, each block's a leaf that `textFlow` sets in its role
+(`flowStyle`), so the text selects across blocks; `articleLayout` stacks
+the blocks, registers one text area of the article's size and lays the
+controls over it (code's copy, details' headers, media, buttons, cards).
+`articleState` on the row keeps details opened, slideshows' items and
+the surfaces. `ARTICLE_PNG_DIR=/tmp/article go test ./internal/messenger/ui
+-run TestRenderArticle` (`render-all -only article`) draws every kind of
+block, narrow and wide, in both themes.
+
 Hashtags, commands, email, phone and card numbers and formatted dates
 act on a click (`history_entities.go`, `chatPage.activateRun`). A phone
 number, a card or a date opens `entityMenu`, a context menu at the press
