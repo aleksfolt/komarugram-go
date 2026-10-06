@@ -163,6 +163,9 @@ type messageComposer struct {
 	pasted                map[string]bool
 	uploading             map[string]bool
 	micClick, voiceCancel surface
+	// stopDraft stops the draft a bot streams in the chat, in place of the
+	// microphone or Send while it may.
+	stopDraft surface
 	// ffmpeg is the FFmpeg the user set, "" for the one on PATH.
 	ffmpeg func() string
 }
@@ -693,6 +696,9 @@ func (c *messageComposer) Layout(gtx layout.Context, chat int64, l localization.
 		rect = image.Rect(0, max(0, size.Y-height), size.X, size.Y)
 	}
 	c.top = rect.Min.Y
+	if c.stopDraft.Clicked(gtx) {
+		p.stopStreamedDraft()
+	}
 	d := c.draft(chat)
 	if d.err != nil && d.err != d.told {
 		p.toast.Show(composerErrorText(d.err, l))
@@ -806,7 +812,13 @@ func (c *messageComposer) Layout(gtx layout.Context, chat int64, l localization.
 		// clip.
 		menuWidth := p.layoutBotMenu(gtx, chat, image.Rect(iconWidth, 0, s.X-2*iconWidth, s.Y), l)
 		sendWidth := 0
-		if c.canRecord(d) || !c.permissions(chat).Allows(model.SendVoice) && !d.sending && d.pending == nil && d.editor.Text() == "" {
+		if p.stoppableDraft() && !d.sending {
+			// While a bot streams a draft the account may stop, Stop takes
+			// the place of Send, as in Telegram Desktop.
+			sendWidth = iconWidth
+			button(s.X-iconWidth, &c.stopDraft, iconStop, l.T("rich.stop_draft"))
+			button(s.X-2*iconWidth, &c.smile, iconEmoji, l.T("composer.emoji"))
+		} else if c.canRecord(d) || !c.permissions(chat).Allows(model.SendVoice) && !d.sending && d.pending == nil && d.editor.Text() == "" {
 			// With nothing written, the microphone takes the far right, as
 			// in Telegram Desktop, and the emoji button moves left of it.
 			sendWidth = iconWidth

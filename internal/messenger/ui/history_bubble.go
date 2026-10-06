@@ -26,10 +26,12 @@ import (
 )
 
 var (
-	iconViews     = wdk.RequireIconWidget(icons.ActionVisibility)
-	iconComments  = wdk.RequireIconWidget(icons.CommunicationChatBubbleOutline)
-	iconFileRow   = wdk.RequireIconWidget(icons.EditorInsertDriveFile)
-	iconPlayFile  = wdk.RequireIconWidget(icons.AVPlayArrow)
+	iconViews    = wdk.RequireIconWidget(icons.ActionVisibility)
+	iconComments = wdk.RequireIconWidget(icons.CommunicationChatBubbleOutline)
+	iconFileRow  = wdk.RequireIconWidget(icons.EditorInsertDriveFile)
+	iconPlayFile = wdk.RequireIconWidget(icons.AVPlayArrow)
+	// iconStop stops a draft a bot streams.
+	iconStop      = wdk.RequireIconWidget(icons.AVStop)
 	iconPauseFile = wdk.RequireIconWidget(icons.AVPause)
 	// iconAudiotrack marks music in the box for sending files.
 	iconAudiotrack = wdk.RequireIconWidget(icons.ImageAudiotrack)
@@ -375,6 +377,14 @@ func (p *chatPage) bubbleContent(gtx layout.Context, r *messageRow, m model.Mess
 	}
 	children = append(children, vspace(4), layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 		return layout.E.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+			if m.Streaming {
+				// A draft a bot streams turns a ring before its time while
+				// the bot writes it.
+				return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions { return p.writing.sized(gtx, l, 12) }),
+					layout.Rigid(layout.Spacer{Width: 6}.Layout),
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions { return messageFooter(gtx, m, l, false) }))
+			}
 			return messageFooter(gtx, m, l, !p.showsComments(m))
 		})
 	}))

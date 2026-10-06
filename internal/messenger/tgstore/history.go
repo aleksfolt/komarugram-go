@@ -132,6 +132,8 @@ type conversation struct {
 	liveEpoch uint64
 	// firsts are the chats' first messages, when known: see noteFirst.
 	firsts map[int64]int
+	// drafts are the messages bots stream: see drafts.go.
+	drafts streamedDrafts
 }
 type viewSave struct {
 	view    model.Viewport
@@ -1159,6 +1161,13 @@ func (s *Store) Handle(ctx context.Context, u tg.UpdatesClass) error {
 			s.contentsRead(peerID(&tg.PeerChannel{ChannelID: u.ChannelID}), u.Messages)
 		case *tg.UpdateChannelMessageViews:
 			s.changeMessage(peerID(&tg.PeerChannel{ChannelID: u.ChannelID}), u.ID, func(m *model.Message) { m.Views = max(m.Views, u.Views) })
+		case *tg.UpdateUserTyping:
+			peer := &tg.PeerUser{UserID: u.UserID}
+			s.applyDraftAction(peer, u.TopMsgID, peer, u.Action)
+		case *tg.UpdateChatUserTyping:
+			s.applyDraftAction(&tg.PeerChat{ChatID: u.ChatID}, 0, u.FromID, u.Action)
+		case *tg.UpdateChannelUserTyping:
+			s.applyDraftAction(&tg.PeerChannel{ChannelID: u.ChannelID}, u.TopMsgID, u.FromID, u.Action)
 		}
 		if msg != nil {
 			if service, ok := msg.(*tg.MessageService); ok {
@@ -1177,6 +1186,9 @@ func (s *Store) Handle(ctx context.Context, u tg.UpdatesClass) error {
 				}
 			}
 			for _, m := range ms {
+				if fresh {
+					s.adoptDraft(m)
+				}
 				if chat, isNew := s.mergeUpdate(m); fresh && isNew {
 					s.notice(m, chat, msg)
 				}
@@ -1609,7 +1621,7 @@ func (s *Store) HistorySince(chat int64, revision uint64) (model.History, bool) 
 	out := *h
 	changed := revision == 0 || revision != h.Revision
 	if changed {
-		out.Messages = append([]model.Message(nil), h.Messages...)
+		out.Messages = append(append([]model.Message(nil), h.Messages...), c.draftMessages(chat)...)
 	} else {
 		out.Messages = nil
 	}

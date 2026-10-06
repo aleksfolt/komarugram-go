@@ -287,6 +287,11 @@ func runDemo(chats int, profile bool, profileDir string, panicDemo bool, receive
 			}
 		})
 	})
+	store.SetChanged(func() {
+		if w := window.Load(); w != nil {
+			w.Invalidate()
+		}
+	})
 	if receive > 0 {
 		go func() {
 			for range time.Tick(receive) {

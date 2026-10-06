@@ -11,6 +11,7 @@ import (
 	"image/gif"
 	"image/png"
 	"os"
+	"slices"
 	"strings"
 	"time"
 	"unicode/utf16"
@@ -232,6 +233,9 @@ func (s *Store) HistorySince(chat int64, revision uint64) (model.History, bool) 
 		h.Messages = nil
 		return h, false
 	}
+	s.mu.Lock()
+	h.Messages = append(slices.Clone(h.Messages), s.streamedDrafts(chat)...)
+	s.mu.Unlock()
 	return h, true
 }
 

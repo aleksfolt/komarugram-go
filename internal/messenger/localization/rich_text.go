@@ -17,6 +17,7 @@ func init() {
 	TelegramKeys["rich.unsupported_text"] = "lng_unsupported_block_text"
 	TelegramKeys["rich.anchor_missing"] = "lng_iv_not_found_in_message"
 	TelegramKeys["rich.show_more"] = "lng_view_button_full_article"
+	TelegramKeys["rich.stop_draft"] = "lng_stop_button"
 	for key, texts := range map[string][2]string{
 		"text.copy_code": {"Копировать", "Copy"},
 		"text.copied":    {"Текст скопирован", "Text copied"},
@@ -40,6 +41,8 @@ func init() {
 		// an article Telegram sent cut short.
 		"rich.anchor_missing": {"Похоже, эта ссылка недействительна.", "This link appears to be invalid."},
 		"rich.show_more":      {"Показать ещё", "Show more"},
+		// The button that stops a draft a bot streams.
+		"rich.stop_draft": {"Остановить", "Stop"},
 	} {
 		russian[key], english[key] = texts[0], texts[1]
 	}

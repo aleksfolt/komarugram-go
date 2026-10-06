@@ -152,6 +152,10 @@ type Message struct {
 	// yet: the account, for one that came, or who it was sent to. Telegram
 	// sets it on an unread mention as well; only voice messages show it.
 	MediaUnread bool `json:",omitempty"`
+	// Streaming marks a message a bot streams as it writes it, not one yet:
+	// see StreamedDrafts. Stoppable is set when the account may stop it.
+	Streaming bool `json:"-"`
+	Stoppable bool `json:"-"`
 }
 
 // GeneralTopic is the id of the topic every forum has, whose messages have

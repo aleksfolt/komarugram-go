@@ -137,6 +137,12 @@ window, for tests. `ARTICLE_PNG_DIR=/tmp/article go test
 article`) draws every kind of block, and a part with its button, narrow
 and wide, in both themes.
 
+The drafts bots stream are messages with `Streaming` set at the end of
+the history (`streamed_drafts.go`): a ring (`chatPage.writing`) turns in
+their footer, their buttons do nothing, they have no menu and no place
+in a selection, and while one may be stopped the composer's Stop
+(`messageComposer.stopDraft`) takes the place of Send.
+
 Hashtags, commands, email, phone and card numbers and formatted dates
 act on a click (`history_entities.go`, `chatPage.activateRun`). A phone
 number, a card or a date opens `entityMenu`, a context menu at the press

@@ -601,6 +601,11 @@ func (a *articleDraw) buttonRow(gtx layout.Context, b *articleBlock) int {
 // press does what button i of block id is for, as the same button under a
 // message does.
 func (a *articleDraw) press(gtx layout.Context, id, i int, b model.MessageButton) {
+	if a.r.streaming {
+		// The buttons of a draft a bot streams work once it is a message,
+		// as in Telegram Desktop.
+		return
+	}
 	switch b.Kind {
 	case "url":
 		a.p.askLink(b.URL)

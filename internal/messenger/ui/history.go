@@ -85,6 +85,9 @@ type messageRow struct {
 	// articleAbove is how high what is over the article in the bubble
 	// is, as the last frame drew it.
 	articleAbove int
+	// streaming is set for a draft a bot streams, whose buttons do
+	// nothing until it is a message.
+	streaming bool
 	// alone is set for the row of an article's photo, which opens alone,
 	// not among the chat's photos.
 	alone bool
@@ -108,6 +111,8 @@ type chatPage struct {
 	// highlightUntil; infoAsked, set when the menu asks for the chat's info.
 	highlight      model.MessageID
 	highlightUntil time.Time
+	// writing turns in the footer of the drafts bots stream.
+	writing loadingIndicator
 	// anchorJump is the message whose article a link asked to scroll to
 	// an anchor of (articleState.jump), while the list was laid out;
 	// anchorWait counts the frames the anchor was not laid out in.
@@ -377,7 +382,7 @@ func (p *chatPage) save(force bool) {
 		return
 	}
 	pos := p.list.Position
-	if pos.First >= len(p.messages) {
+	if pos.First >= len(p.messages) || p.messages[pos.First].Streaming {
 		return
 	}
 	v := model.Viewport{ChatID: p.chat, AnchorMessageID: p.messages[pos.First].Key.MessageID, AnchorOffsetPx: pos.Offset, AtEnd: !pos.BeforeEnd, Environment: p.env, UpdatedAt: time.Now()}
@@ -653,7 +658,10 @@ func (p *chatPage) layoutHistory(gtx layout.Context, c model.Chat, l localizatio
 				}
 				measurement := model.MessageLayout{Key: msg.Key, Environment: env, ContentRevision: msg.ContentRevision, HeightPx: dims.Size.Y, MeasuredAt: time.Now()}
 				p.measures[msg.Key.MessageID] = measurement
-				p.dirty[msg.Key.MessageID] = measurement
+				if !msg.Streaming {
+					// The cache keeps no layout of a draft a bot streams.
+					p.dirty[msg.Key.MessageID] = measurement
+				}
 				p.heights.Set(i, dims.Size.Y)
 			}
 			return dims

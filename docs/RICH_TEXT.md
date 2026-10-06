@@ -4,8 +4,9 @@ Status: implementation started, 2026-10-04. Stage 0 (code and quote
 blocks; entities clicks act on and formatted dates, 2026-10-06), stage 1
 (reading rich messages, 2026-10-05), stage 2 (the article engine, drawn
 in the bubble, 2026-10-06), anchors and the whole article in a window
-of its own (stage 3, 2026-10-06) and stage 4a (code highlighting,
-2026-10-05) are implemented; see "Implementation progress" below.
+of its own (stage 3, 2026-10-06), the drafts bots stream (2026-10-06)
+and stage 4a (code highlighting, 2026-10-05) are implemented; see
+"Implementation progress" below.
 The research notes gather what Telegram sends, how Telegram Desktop shows
 it, what KomaruGram has, and a
 measured comparison of the libraries the work needs: a Markdown parser
@@ -1027,6 +1028,7 @@ large and needs a dynamic linker.
 | 1 | `model.RichPage`; conversion from `tg` (RichText into runs and entities, PageBlock into blocks); stored in the cache's JSON; `part` and `messages.getRichMessage`; summary text for the chat list, replies and FTS | gotd v0.162.0 (layer 229) |
 | 2 | Article engine: headings, nested lists with numbering and checkboxes, quotes, code, divider, tables with spans and alignment, details, media blocks, sub- and superscript, marks, anchors, inline images, buttons; selection across blocks | — |
 | 3 | The engine in the bubble: links to anchors, "Show more" and the article window (done); heights in `HeightIndex` and the layout cache, lazy media, a table's sideways scrolling | — |
+| 3b | Drafts bots stream: `sendMessageTextDraftAction`, `sendMessageRichMessageDraftAction`, `sendMessageStopDraftAction`, the Stop button (done) | — |
 | 4 | Formulas: the RaTeX module, its build script, the Go drawer of its display list, KaTeX fonts, fallback font for Cyrillic, size bounds | decided: RaTeX |
 | 4a | Code highlighting for `pre`, rich messages and `.md`: the Go port of libprisma, worker goroutine, LRU cache, deadlines, theme colors | decided: regexp2 v1.12.0 |
 | 5 | `.md` viewer: parse, prepare into the same document, a window with scrolling, search and anchors, limits, "Open file" | Markdown parser |
@@ -1083,7 +1085,8 @@ are not in this plan.
 
 Mentions by ID came with the link handling merged from NaixROOT's fork
 (see below); the rest of stage 0, stages 1 and 2, anchors and the
-article window of stage 3 and stage 4a are done (below). RaTeX, Markdown and Instant View remain later stages.
+article window of stage 3, the drafts bots stream and stage 4a are done
+(below). RaTeX, Markdown and Instant View remain later stages.
 
 ### Focused validation
 
@@ -1426,11 +1429,45 @@ activateRichPagePreparedLink`, `Iv::Instance::showRichMessage`):
   Message", whose button opens the whole screenplay, where a footnote's
   link goes to the footnote and its ↩ back.
 
-Not drawn yet: a bot's live drafts (`sendMessageTextDraftAction`,
-`sendMessageRichMessageDraftAction`, `sendMessageStopDraftAction`;
-tdesktop's `history/history_streamed_drafts.cpp`). The demo bot's
-"Stream Demo" streams one; the client shows nothing until the message it
-sends at the end.
+### Drafts bots stream
+
+2026-10-06, after Telegram Desktop's `history/history_streamed_drafts.cpp`
+and https://core.telegram.org/api/bots/ai#live-message-streaming:
+
+- **Store** (`tgstore/drafts.go`): the typing updates of a user, a group
+  and a channel carry `sendMessageTextDraftAction` and
+  `sendMessageRichMessageDraftAction`, the updates of one message under
+  one random id. A draft is converted as a message is, its article's
+  media downloadable, and kept apart from the history and the cache;
+  `HistorySince` ends a chat's history, and its thread's, with its
+  drafts, as messages with `Streaming` set and ids below 0. The next
+  draft of a sender in a thread replaces the last one; a draft goes when
+  the message it becomes comes (the sender's, in its thread or in none;
+  a message without a sender is the chat's own, as in private chats),
+  when the bot stops it (`sendMessageStopDraftAction`, unless it keeps on
+  stop; what comes for it after is dropped), and after 30 s without news.
+- **History**: a draft is drawn as a message, a ring turning before its
+  time; its buttons do nothing yet, as tdesktop's text says ("all buttons
+  are disabled"); it has no menu, no reactions, no place in a selection
+  or its range, no layout kept in the cache, and the history's read mark
+  stays on the message before it.
+- **Stop**: while a draft the bot lets the account stop shows, Stop takes
+  the place of Send and the microphone, as in tdesktop; it sends
+  `sendMessageStopDraftAction` (`model.DraftStopper`). The bot's own
+  message of a stopped draft is up to the bot.
+- **Departures**: tdesktop turns the draft into the message in place and
+  types its text in as it grows (`TextAppearing`); here the message takes
+  the draft's place, and the text shows as it comes. The chat list does
+  not show a draft.
+- **Tests**: a draft grows, is replaced, becomes its message (one
+  without a sender too), stops, keeps on stop, goes without news; a rich
+  draft is an article; in the history, Stop stops it, its buttons and the
+  read mark leave it alone and its layout is not kept. Each fails with
+  its code removed.
+- **Live**, Linux/X11: the demo's bots stream an article on `/stream`,
+  which Stop stops; on the maintainer's account, @richtextdemobot's
+  "Stream Demo" streamed its article and became its message. Stop was
+  checked in the demo only: on a real account it sends.
 
 ### Stage 4a: code highlighting
 

@@ -53,7 +53,7 @@ func messageRuns(m model.Message, l localization.Catalog, now time.Time) ([]mode
 
 // newMessageRow is the row of m, with its text's runs.
 func newMessageRow(m model.Message, l localization.Catalog, now time.Time) *messageRow {
-	r := &messageRow{revision: m.ContentRevision, noCopy: m.NoForwards, sender: m.SenderID, source: m.Text, language: l.Language(), key: m.Key}
+	r := &messageRow{revision: m.ContentRevision, noCopy: m.NoForwards, sender: m.SenderID, source: m.Text, language: l.Language(), key: m.Key, streaming: m.Streaming}
 	r.runs, r.datesDue = messageRuns(m, l, now)
 	r.prepareArticle(m, l, now)
 	return r
