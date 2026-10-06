@@ -645,13 +645,17 @@ func run(w *Window, opts Options, build func(w *Window) Content, activated func(
 	}
 }
 
-// handleKeys processes the window keys and reports whether to quit.
+// handleKeys processes the window keys and reports whether to quit. It
+// reads them before the content, and a key it reads the content never
+// sees: Escape is the window's only when it closes the window, and the
+// content's menus and dialogs take it otherwise.
 func (w *Window) handleKeys(gtx layout.Context, opts Options) bool {
+	filters := []event.Filter{key.Filter{Name: key.NameF11}}
+	if opts.QuitOnEscape {
+		filters = append(filters, key.Filter{Name: key.NameEscape})
+	}
 	for {
-		ev, ok := gtx.Event(
-			key.Filter{Name: key.NameEscape},
-			key.Filter{Name: key.NameF11},
-		)
+		ev, ok := gtx.Event(filters...)
 		if !ok {
 			return false
 		}
