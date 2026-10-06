@@ -83,6 +83,7 @@ func articleFixture() model.RichPage {
 		model.RichBlock{Kind: model.RichDetails, Text: text("Закрытые подробности"), Blocks: []model.RichBlock{{Kind: model.RichParagraph, Text: text("Не видно.")}}},
 		model.RichBlock{Kind: model.RichMediaBlock, Media: []model.RichMedia{photo("demo/photo", 640, 360), photo("demo/photo2", 360, 640), photo("demo/photo3", 640, 480)}, Caption: text("Коллаж из трёх фото")},
 		model.RichBlock{Kind: model.RichMediaBlock, Slideshow: true, Media: []model.RichMedia{photo("demo/photo", 640, 360), photo("demo/photo2", 640, 360)}, Caption: text("Слайдшоу")},
+		model.RichBlock{Kind: model.RichMediaBlock, Media: []model.RichMedia{{Kind: model.MessageVideo, Media: &model.MessageMedia{ID: "demo/video", MIMEType: "video/mp4", Width: 640, Height: 360, Duration: 5 * time.Second}}}, Caption: text("Видео")},
 		model.RichBlock{Kind: model.RichMediaBlock, Media: []model.RichMedia{{Kind: model.MessageMusic, Media: &model.MessageMedia{ID: "demo/song", Title: "Песня", Performer: "Исполнитель", Size: 4 << 20}}}},
 		model.RichBlock{Kind: model.RichButtons, Buttons: []model.RichButton{
 			{Text: text("Открыть"), Button: model.MessageButton{Kind: "url", URL: "https://telegram.org"}, Style: "primary"},

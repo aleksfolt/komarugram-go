@@ -135,10 +135,21 @@ func (p *chatPage) mediaTile(gtx layout.Context, r *messageRow, m model.Message,
 			origin := image.Pt((size.X-diameter)/2, (size.Y-diameter)/2)
 			offset(gtx, origin, func(gtx layout.Context) layout.Dimensions {
 				paint.FillShape(gtx.Ops, color.NRGBA{A: 145}, clip.Ellipse{Max: image.Pt(diameter, diameter)}.Op(gtx.Ops))
+				// White on the dark circle in either theme.
+				white := token.NewMatColorFromHexRGB(0xffffff)
+				if video {
+					// An icon, not "▶": the text's fonts lack it, and the
+					// emoji font drew it as the colored emoji.
+					inset := diameter / 6
+					offset(gtx, image.Pt(inset, inset), func(gtx layout.Context) layout.Dimensions {
+						return exact(gtx, image.Pt(diameter-2*inset, diameter-2*inset), func(gtx layout.Context) layout.Dimensions {
+							return iconPlayFile(gtx, white)
+						})
+					})
+					return layout.Dimensions{Size: image.Pt(diameter, diameter)}
+				}
 				symbol := "×"
 				switch {
-				case video:
-					symbol = "▶"
 				case cancelled:
 					symbol = "↓"
 				case err != nil:
@@ -149,9 +160,9 @@ func (p *chatPage) mediaTile(gtx layout.Context, r *messageRow, m model.Message,
 				box.Constraints = layout.Exact(image.Pt(diameter, diameter))
 				layout.Center.Layout(box, func(gtx layout.Context) layout.Dimensions {
 					gtx.Constraints.Min = image.Point{}
-					return label(gtx, symbol, token.TypestyleTitleLarge, scheme(gtx).InverseSurface.OnColor, 1)
+					return label(gtx, symbol, token.TypestyleTitleLarge, white, 1)
 				})
-				if loading && !video {
+				if loading {
 					ring(gtx, diameter, progress, animate)
 				}
 				return layout.Dimensions{Size: image.Pt(diameter, diameter)}
