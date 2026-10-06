@@ -18,7 +18,15 @@ type TextRun struct {
 	Block          int
 	Pre, Collapsed bool
 	Language       string
+	// Action is what a click on the run does when it opens no URL: the kind
+	// of its entity (hashtag, cashtag, bot_command, bank_card or date), with
+	// Value, the entity's whole text, and Date, a date's Unix time.
+	Action, Value string
+	Date          int64
 }
+
+// actionKinds are the entities a click acts on without a URL.
+var actionKinds = map[string]bool{"hashtag": true, "cashtag": true, "bot_command": true, "bank_card": true, "date": true}
 
 // entityHeap gives later entities priority, matching Telegram entity order.
 // Removed entries are discarded lazily, so overlapping hostile intervals
@@ -73,9 +81,11 @@ func TextRuns(text string, entities []Entity) []TextRun {
 			continue
 		}
 		switch e.Kind {
-		case "bold", "italic", "code", "pre", "underline", "strike", "spoiler", "quote", "emoji", "url", "mention":
+		case "bold", "italic", "code", "pre", "underline", "strike", "spoiler", "quote", "emoji", "url", "mention", "email", "phone":
 		default:
-			continue
+			if !actionKinds[e.Kind] {
+				continue
+			}
 		}
 		events = append(events, event{e.Offset, i, true}, event{e.Offset + e.Length, i, false})
 	}
@@ -94,7 +104,7 @@ func TextRuns(text string, entities []Entity) []TextRun {
 			if ev.start {
 				delta = 1
 				switch e.Kind {
-				case "url", "mention":
+				case "url", "mention", "email", "phone", "hashtag", "cashtag", "bot_command", "bank_card", "date":
 					heap.Push(&links, ev.index)
 				case "emoji":
 					heap.Push(&emojis, ev.index)
@@ -123,11 +133,20 @@ func TextRuns(text string, entities []Entity) []TextRun {
 		if i := links.top(active); i >= 0 {
 			e := entities[i]
 			value := text[boundary[e.Offset]:boundary[e.Offset+e.Length]]
-			run.URL = e.URL
-			if e.Kind == "mention" {
+			switch {
+			case e.Kind == "mention":
 				run.URL = "https://t.me/" + strings.TrimPrefix(value, "@")
-			} else if run.URL == "" {
-				run.URL = value
+			case e.Kind == "email":
+				run.URL = "mailto:" + value
+			case e.Kind == "phone":
+				run.URL = "tel:" + value
+			case actionKinds[e.Kind]:
+				run.Action, run.Value, run.Date = e.Kind, value, e.Date
+			default:
+				run.URL = e.URL
+				if run.URL == "" {
+					run.URL = value
+				}
 			}
 		}
 		// Redundant nested styles must not create thousands of shaping calls.

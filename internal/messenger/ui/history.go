@@ -68,6 +68,14 @@ type messageRow struct {
 	// tile shows the variant of the media chosen for tileSize pixels.
 	tile     model.Message
 	tileSize image.Point
+	// sender is who sent the message, for the commands in it; source, its
+	// text as sent, for a calendar event of a date in it.
+	sender int64
+	source string
+	// language is the one the dates of runs are written in, and datesDue
+	// when a relative one among them changes next.
+	language localization.Language
+	datesDue time.Time
 }
 type chatPage struct {
 	membership membershipControl
@@ -114,17 +122,19 @@ type chatPage struct {
 	releaseMemory, keepMemory func()
 	emojiPacks                emojiPacksDialog
 	messageMenu               messageMenu
-	composer                  *messageComposer
-	header                    widget.Clickable
-	headAvatar                widget.Clickable
-	appearance                *chatThemeController
-	files                     *attachmentFiles
-	trace                     *diagnostics.Trace
-	selection                 messageSelection
-	keyboard                  struct{}
-	activeText                *messageRow
-	actions                   selectionBar
-	forwarding                forwardPicker
+	// entityMenu is the menu of a phone number, a card or a date clicked.
+	entityMenu entityMenu
+	composer   *messageComposer
+	header     widget.Clickable
+	headAvatar widget.Clickable
+	appearance *chatThemeController
+	files      *attachmentFiles
+	trace      *diagnostics.Trace
+	selection  messageSelection
+	keyboard   struct{}
+	activeText *messageRow
+	actions    selectionBar
+	forwarding forwardPicker
 	// toast tells, over the end of the history, what was done in the chat
 	// and what failed there.
 	toast     toast
@@ -400,6 +410,7 @@ func (p *chatPage) Layout(gtx layout.Context, c model.Chat, l localization.Catal
 
 func (p *chatPage) layoutHistory(gtx layout.Context, c model.Chat, l localization.Catalog, animate bool) layout.Dimensions {
 	p.animate = animate
+	p.entityMenu.watch(gtx)
 	if id := p.jumpPending; id != 0 {
 		p.jumpPending = 0
 		p.jumpTo(id)
@@ -507,7 +518,7 @@ func (p *chatPage) layoutHistory(gtx layout.Context, c model.Chat, l localizatio
 	}
 	p.historyWidth = size.X
 	theme := uint32(sc.Surface.Color.AsNRGBA().R)<<16 | uint32(sc.Surface.Color.AsNRGBA().G)<<8 | uint32(sc.Surface.Color.AsNRGBA().B)
-	env := model.RenderEnvironment{WidthPx: size.X, ScaleMilli: int(gtx.Metric.PxPerDp * 1000), TextScaleMilli: int(gtx.Metric.PxPerSp * 1000), Locale: string(l.Language()), FontRevision: fonts.Revision(), ThemeRevision: theme, RendererRevision: 14}
+	env := model.RenderEnvironment{WidthPx: size.X, ScaleMilli: int(gtx.Metric.PxPerDp * 1000), TextScaleMilli: int(gtx.Metric.PxPerSp * 1000), Locale: string(l.Language()), FontRevision: fonts.Revision(), ThemeRevision: theme, RendererRevision: 15}
 	if p.trace != nil {
 		p.trace.History.Environment = fmt.Sprintf("width:%d dp:%d sp:%d locale:%s font:%d theme:%x renderer:%d", env.WidthPx, env.ScaleMilli, env.TextScaleMilli, env.Locale, env.FontRevision, env.ThemeRevision, env.RendererRevision)
 	}
@@ -658,6 +669,7 @@ func (p *chatPage) layoutHistory(gtx layout.Context, c model.Chat, l localizatio
 		p.play(gtx, *m, p.reportMedia, l)
 	}
 	p.menuLayout(gtx, l)
+	p.entityMenuLayout(gtx, l)
 	if p.restored && p.list.Position.First < 3 && history.HasOlder && !history.LoadingOlder && history.Err == nil {
 		p.source.LoadOlder(p.chat)
 	}
@@ -848,7 +860,7 @@ func (p *chatPage) textFlow(gtx layout.Context, r *messageRow, block *messageTex
 		if run.Code {
 			st.Font.Typeface = theme.Typescale[token.TypestylePreformatted].Font
 		}
-		if run.URL != "" {
+		if run.URL != "" || run.Action != "" {
 			st.Color = scheme(gtx).Primary.Color.AsNRGBA()
 		}
 		if run.Emoji != 0 && (!run.Spoiler || r.revealed || !r.text.reveal.started.IsZero()) {
@@ -886,7 +898,7 @@ func (p *chatPage) textFlow(gtx layout.Context, r *messageRow, block *messageTex
 	}
 	for _, i := range styleIndices {
 		st := styles[i]
-		if len(colors) == 0 || st.Color.A == 0 || runs[i].URL != "" || st.Content != runs[i].Text {
+		if len(colors) == 0 || st.Color.A == 0 || runs[i].URL != "" || runs[i].Action != "" || st.Content != runs[i].Text {
 			flowStyles = append(flowStyles, st)
 			flowRuns = append(flowRuns, i)
 			continue
@@ -924,7 +936,7 @@ func (p *chatPage) textFlow(gtx layout.Context, r *messageRow, block *messageTex
 			if frames[i] != nil {
 				drawImage(gtx, p.images, frames[i], size)
 			}
-			if run.Underline || run.Strike || run.URL != "" {
+			if run.Underline || run.Strike || run.URL != "" || run.Action != "" {
 				y := size.Y - 1
 				if run.Strike {
 					y = size.Y / 2

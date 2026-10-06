@@ -117,6 +117,16 @@ light and dark. `CODE_COLORS_PNG_DIR=/tmp/code go test
 ./internal/messenger/ui -run TestRenderCodeColors` (`render-all -only
 code-colors`) draws JavaScript, Python, HTML and a diff in both themes.
 
+Hashtags, commands, email, phone and card numbers and formatted dates
+act on a click (`history_entities.go`, `chatPage.activateRun`). A phone
+number, a card or a date opens `entityMenu`, a context menu at the press
+(`contextMenu.Place`) with lines that may tell only, or say more in a
+second line; what it asks Telegram comes into it while it is open. It
+takes the presses itself, before the messages take their clicks, since
+menus that read them after open at the previous press when a click comes
+in one frame. Formatted dates are written in the reader's language when
+the row is made (`messageRuns`), and again when a relative one changes.
+
 ### Height transitions (`height.go`)
 
 A view owns a `heightTransition`. `Value` moves from the displayed height

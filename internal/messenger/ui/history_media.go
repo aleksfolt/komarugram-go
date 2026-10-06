@@ -208,15 +208,16 @@ func ring(gtx layout.Context, diameter int, progress float32, animate bool) {
 	}
 	paint.FillShape(gtx.Ops, color.NRGBA{R: 255, G: 255, B: 255, A: 240}, clip.Stroke{Path: path.End(), Width: float32(gtx.Dp(2))}.Op())
 }
-func albumRow(r *messageRow, m model.Message) *messageRow {
+func albumRow(gtx layout.Context, r *messageRow, m model.Message, l localization.Catalog) *messageRow {
 	if r.album == nil {
 		r.album = map[model.MessageID]*messageRow{}
 	}
 	child := r.album[m.Key.MessageID]
 	if child == nil || child.revision != m.ContentRevision {
-		child = &messageRow{revision: m.ContentRevision, runs: model.TextRuns(m.Text, m.Entities), noCopy: m.NoForwards}
+		child = newMessageRow(m, l, gtx.Now)
 		r.album[m.Key.MessageID] = child
 	}
+	child.refreshDates(gtx, m, l)
 	return child
 }
 func (p *chatPage) albumLayout(gtx layout.Context, r *messageRow, m model.Message, l localization.Catalog, animate bool) layout.Dimensions {
@@ -252,7 +253,7 @@ func (p *chatPage) albumLayout(gtx layout.Context, r *messageRow, m model.Messag
 			tileGtx := gtx
 			tileGtx.Constraints = layout.Exact(image.Pt(w, height))
 			offset(tileGtx, image.Pt(x, y), func(gtx layout.Context) layout.Dimensions {
-				return p.mediaTile(gtx, albumRow(r, member), member, image.Pt(w, height), true, l, animate)
+				return p.mediaTile(gtx, albumRow(gtx, r, member, l), member, image.Pt(w, height), true, l, animate)
 			})
 			x += w + gap
 		}

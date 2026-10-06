@@ -136,6 +136,8 @@ func (s *Store) History(chat int64) model.History {
 	messages[len(messages)-1].Rich = &page
 	blocksText, blocksEntities := TextBlocksExample()
 	add(blocksText, model.MessageText, nil, blocksEntities, nil)
+	entitiesText, entities := EntitiesExample(time.Now())
+	add(entitiesText, model.MessageText, nil, entities, nil)
 	if s.isChannel(chat) {
 		// A channel's posts have no sender and a discussion: the last ones
 		// have comments, the others wait for the first one.

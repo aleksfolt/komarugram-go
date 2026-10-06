@@ -1,9 +1,9 @@
 # Rich text, Markdown and LaTeX
 
-Status: implementation started, 2026-10-04. The first part of stage 0
-(code and quote blocks), stage 1 (reading rich messages, 2026-10-05) and
-stage 4a (code highlighting, 2026-10-05) are implemented; see
-"Implementation progress" below.
+Status: implementation started, 2026-10-04. Stage 0 (code and quote
+blocks; entities clicks act on and formatted dates, 2026-10-06), stage 1
+(reading rich messages, 2026-10-05) and stage 4a (code highlighting,
+2026-10-05) are implemented; see "Implementation progress" below.
 The research notes gather what Telegram sends, how Telegram Desktop shows
 it, what KomaruGram has, and a
 measured comparison of the libraries the work needs: a Markdown parser
@@ -214,9 +214,10 @@ The upgrade was tried in a scratch copy of the repository:
     copy button. A blockquote has a bar; `collapsed` shows three visual
     lines and can be expanded locally. Both retain nested inline styles,
     source offsets and selection across blocks.
-  - Dropped as `unsupported`, shown as plain text: hashtag, bot command,
-    email, phone, cashtag, bank card, formatted date and the diff
-    entities.
+  - Hashtags, cashtags, bot commands, email, phone and bank card numbers
+    act on a click, and formatted dates are written in the reader's
+    language (stage 0, below). Dropped as `unsupported`, shown as plain
+    text: the diff entities and `messageEntityBox`.
 - **Ordinary entity blocks only; no article layout yet.**
 - **`rich_message` is read** (stage 1): `tgstore/rich.go` converts it into
   `model.RichPage`, and the message's text is the page's summary
@@ -1079,11 +1080,10 @@ are not in this plan.
   messages, collapsed and expanded, in light and dark themes. It is part
   of `cmd/render-all`; the same example is at the end of demo histories.
 
-Remaining in stage 0: clickable hashtags, bot commands, email, phone
-and formatted dates. Mentions by ID came with the link handling merged
-from NaixROOT's fork (see below). Stages 1 and 4a are done (below); the
-shared article engine and drawing the page in the bubble remain stages
-2–3. RaTeX, Markdown and Instant View remain later stages.
+Mentions by ID came with the link handling merged from NaixROOT's fork
+(see below); the rest of stage 0, stage 1 and stage 4a are done (below).
+The shared article engine and drawing the page in the bubble remain
+stages 2–3. RaTeX, Markdown and Instant View remain later stages.
 
 ### Focused validation
 
@@ -1140,6 +1140,83 @@ shared article engine and drawing the page in the bubble remain stages
   cross-builds pass with `CGO_ENABLED=0` and no other flags.
 - macOS, supported since `main` merged its port, was not built: darwin
   needs cgo (Gio's GL, `security`), which this machine cannot cross-build.
+
+### Stage 0, finished: entities clicks act on, formatted dates
+
+2026-10-06, without new dependencies. As tdesktop does
+(`core/ui_integration.cpp`, `createLinkHandler`, and the click handlers in
+`core/click_handler_types.cpp`, `phone_click_handler.cpp`,
+`bank_card_click_handler.cpp`):
+
+- **Conversion** (`tgstore/convert.go`): `messageEntityHashtag`,
+  `Cashtag`, `BotCommand`, `Email`, `Phone`, `BankCard` and
+  `FormattedDate` (its time and flags) keep their kinds. Messages cached
+  before keep `unsupported` until they are fetched again.
+- **Runs** (`model.TextRuns`): email and phone numbers are links,
+  `mailto:` and `tel:`; hashtags, cashtags, commands, card numbers and
+  dates carry an `Action` with the entity's whole text, and a date its
+  time. They are drawn as links.
+- **Formatted dates** (`model.FormatDates`, `ui/history_entities.go`): a
+  date with a format is written as tdesktop's `FormatDateWithFlags`
+  writes it: weekday, day and month with the year when it is far,
+  time; relative ones as "in 3 days", "5 minutes ago". Entities around
+  it move in UTF-16 units; one that ends inside it ends before it. The
+  row writes its dates again when a relative one changes and asks for a
+  frame then, keeping expanded quotes; a new language writes them again
+  too. Texts are tdesktop's `lng_month*`, `lng_hours_*`,
+  `lng_date_relative_*` keys. Departures: times are 24-hour, as
+  elsewhere in the client; "in 3 days" turns into "in 2 days" when fewer
+  than 3 are left, where tdesktop waits until 2 are.
+- **Clicks** (`chatPage.activateRun`):
+  - a hashtag or cashtag searches the chat it is clicked in from its first
+    page, a private chat included, as the maintainer asked (2026-10-06).
+    Telegram Desktop searches all chats from a private chat;
+  - a command is sent; in a group, with the username of the bot whose
+    message it is, unless it names a bot (`model.BotUsernames`, the
+    store's peers);
+  - email opens the link dialog with `mailto:`, as other links do here;
+  - a phone number, a card number or a date opens a menu where it was
+    pressed: copy the number, and who has it (`contacts.resolvePhone`,
+    "View profile" opens the chat); copy the card's number, and its
+    bank's pages from `payments.getBankCardData`; copy the date in full,
+    or add it to the calendar, an iCalendar file of an hour, with the
+    message's text, opened by the system (tdesktop's
+    `ExportToCalendar`). Both calls only read. "Add to contacts" is left
+    out: it writes.
+- **Escape** never reached the content of the messenger's windows:
+  `appwindow` read every Escape before the content, for windows that
+  close on it. Menus, the chat search and dialogs did not close on it.
+  The window now reads Escape only when it closes on it (the kitchen and
+  the panic dialog); `TestEscapeIsTheContentsUnlessItQuits` fails
+  without the fix.
+- **Demo:** `mockstore.EntitiesExample`, at the end of demo histories,
+  with a number someone has (`mockstore.DemoPhone`), a made-up bank and a
+  meeting three days ahead. `TEXT_BLOCKS_PNG_DIR` renders it in Russian
+  and English.
+- **Tests**, each checked with its fix removed: conversion and the cache;
+  runs' actions; dates replaced with entities moved, and hostile ranges;
+  date texts and when relative ones change; the hashtag's search in a
+  group and a private chat;
+  commands with and without the bot's username; the phone and card menus,
+  copying and the profile; the date menu at the press, also when the
+  press and the release come in one frame; Escape; a late answer of a
+  closed menu kept from the open one; the iCalendar file's escapes.
+
+Live check, Linux/X11, `-demo -no-integrations`: the hashtag searched the
+group; the phone, card and date menus opened under the pointer, copied,
+and found the demo's user and bank; the relative date turned from "через
+3 дня" to "через 2 дня" at the hour; email asked to open `mailto:`;
+`/start` was sent to the demo chat; the calendar file opened the
+system's calendar, closed without importing. Escape closed the message
+menu, the entity menus, the link dialog and the chat search, which it did
+not before. Two bugs were found this way and fixed: a quick click, its
+press and release in one frame, opened the menu where the previous press
+had been, and a late answer of a closed menu could leave the next one
+loading.
+
+Not checked: Windows and macOS (Escape there included); on the real
+account nothing was clicked, since a command sends and the menus' calls
+were checked against fakes.
 
 ### Stage 1: rich messages read
 
@@ -1217,8 +1294,8 @@ Live check, Linux/X11, on the maintainer's account with `@richtextdemobot`
 Left for later stages: drawing the page; the "Show more" button; a full
 article kept offline is replaced only by the next load, not by an edit;
 file references of the page's media renew only through the history's
-existing paths; formatted dates and the new entity kinds are drawn as
-plain text; `textImage` stays `[image]`, as in tdesktop.
+existing paths; sub- and superscript, marks and buttons in text are
+drawn as plain text; `textImage` stays `[image]`, as in tdesktop.
 
 ### Stage 4a: code highlighting
 

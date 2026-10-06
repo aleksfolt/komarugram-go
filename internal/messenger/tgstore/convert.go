@@ -129,6 +129,22 @@ func convertMessage(account string, m tg.MessageClass, names map[int64]string) (
 			case *tg.MessageEntityCustomEmoji:
 				entity.Kind = "emoji"
 				entity.DocumentID = e.DocumentID
+			case *tg.MessageEntityHashtag:
+				entity.Kind = "hashtag"
+			case *tg.MessageEntityCashtag:
+				entity.Kind = "cashtag"
+			case *tg.MessageEntityBotCommand:
+				entity.Kind = "bot_command"
+			case *tg.MessageEntityEmail:
+				entity.Kind = "email"
+			case *tg.MessageEntityPhone:
+				entity.Kind = "phone"
+			case *tg.MessageEntityBankCard:
+				entity.Kind = "bank_card"
+			case *tg.MessageEntityFormattedDate:
+				entity.Kind = "date"
+				entity.Date = int64(e.Date)
+				entity.DateFormat = dateFlags(e.Relative, e.ShortTime, e.LongTime, e.ShortDate, e.LongDate, e.DayOfWeek)
 			default:
 				entity.Kind = "unsupported"
 			}

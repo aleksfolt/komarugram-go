@@ -149,12 +149,13 @@ func (p *chatPage) row(gtx layout.Context, m model.Message, date bool, join bubb
 		if p.activeText == r {
 			p.activeText = nil
 		}
-		r = &messageRow{revision: m.ContentRevision, runs: model.TextRuns(m.Text, m.Entities), noCopy: m.NoForwards}
+		r = newMessageRow(m, l, gtx.Now)
 		for _, row := range m.Buttons {
 			r.buttons = append(r.buttons, make([]surface, len(row)))
 		}
 		p.rows[m.Key.MessageID] = r
 	}
+	r.refreshDates(gtx, m, l)
 	if m.ReplyToMessageID != 0 && r.reply.Clicked(gtx) {
 		p.jumpPending = m.ReplyToMessageID
 		p.invalidate()
@@ -332,7 +333,9 @@ func (p *chatPage) bubbleContent(gtx layout.Context, r *messageRow, m model.Mess
 			if member.Text != "" && !seen[member.Text] {
 				seen[member.Text] = true
 				member := member
-				children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions { return p.richText(gtx, albumRow(r, member), l, animate) }), vspace(4))
+				children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					return p.richText(gtx, albumRow(gtx, r, member, l), l, animate)
+				}), vspace(4))
 			}
 		}
 	} else if m.Text != "" {

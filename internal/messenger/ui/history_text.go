@@ -205,8 +205,8 @@ func (p *chatPage) textEvents(gtx layout.Context, r *messageRow, animate bool) {
 				if !animate {
 					r.revealed = true
 				}
-			} else if run.URL != "" {
-				p.askLink(run.URL)
+			} else if run.URL != "" || run.Action != "" {
+				p.activateRun(gtx, r, run)
 			}
 		}
 	}
@@ -270,7 +270,7 @@ func (p *chatPage) keyboardEvents(gtx layout.Context) {
 			continue
 		}
 		if e.Name == key.NameEscape {
-			if p.messageMenu.open {
+			if p.messageMenu.open || p.entityMenu.open {
 				// Escape closes the menu first, as it does in Telegram Desktop.
 				p.closeMenu()
 				continue

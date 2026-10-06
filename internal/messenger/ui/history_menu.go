@@ -127,6 +127,7 @@ func (p *chatPage) openMenu(gtx layout.Context, pos f32.Point, top int) {
 func (p *chatPage) closeMenu() {
 	p.messageMenu.open = false
 	p.messageMenu.packs.stop()
+	p.entityMenu.close()
 }
 
 // menuMessage is the message whose menu is open.

@@ -522,7 +522,7 @@ func (c *richConverter) appendText(out *model.RichText, t tg.RichTextClass, mode
 			c.appendText(out, t.Text, mode, depth)
 			break
 		}
-		wrap(t.Text, model.Entity{Kind: "date", Date: int64(t.Date), DateFormat: dateFormat(t)})
+		wrap(t.Text, model.Entity{Kind: "date", Date: int64(t.Date), DateFormat: dateFlags(t.Relative, t.ShortTime, t.LongTime, t.ShortDate, t.LongDate, t.DayOfWeek)})
 	case *tg.TextImage:
 		// Telegram Desktop shows no inline images in rich messages either.
 		out.Text += "[image]"
@@ -558,12 +558,14 @@ func (c *richConverter) appendText(out *model.RichText, t tg.RichTextClass, mode
 	}
 }
 
-func dateFormat(t *tg.TextDate) model.DateFormat {
+// dateFlags is how a date of a message or of a rich text is written, by
+// the flags Telegram sets on it.
+func dateFlags(relative, shortTime, longTime, shortDate, longDate, dayOfWeek bool) model.DateFormat {
 	var f model.DateFormat
 	for _, flag := range []struct {
 		set bool
 		f   model.DateFormat
-	}{{t.Relative, model.DateRelative}, {t.ShortTime, model.DateShortTime}, {t.LongTime, model.DateLongTime}, {t.ShortDate, model.DateShortDate}, {t.LongDate, model.DateLongDate}, {t.DayOfWeek, model.DateDayOfWeek}} {
+	}{{relative, model.DateRelative}, {shortTime, model.DateShortTime}, {longTime, model.DateLongTime}, {shortDate, model.DateShortDate}, {longDate, model.DateLongDate}, {dayOfWeek, model.DateDayOfWeek}} {
 		if flag.set {
 			f |= flag.f
 		}

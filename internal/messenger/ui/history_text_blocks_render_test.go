@@ -62,6 +62,26 @@ func TestRenderTextBlocks(t *testing.T) {
 			}
 		}
 	}
+	// What clicks act on, the dates written in the reader's language.
+	text, entities = mockstore.EntitiesExample(time.Date(2026, 10, 5, 12, 30, 0, 0, time.Local))
+	for _, dark := range []bool{false, true} {
+		for _, lang := range []string{"ru", "en"} {
+			p := newChatPage(benchmarkHistory{}, func() {})
+			p.images = &imageOps{}
+			p.rows = map[model.MessageID]*messageRow{}
+			m := model.Message{Key: model.MessageKey{MessageID: 1}, Text: text, Entities: entities, Date: time.Date(2026, 10, 5, 12, 30, 0, 0, time.UTC), ContentRevision: 1}
+			renderToast(t, filepath.Join(dir, fmt.Sprintf("text-entities-%s-dark-%t.png", lang, dark)), image.Pt(360, 260), dark, func(gtx layout.Context) {
+				gtx.Now = time.Date(2026, 10, 5, 12, 30, 0, 0, time.Local)
+				p.images.BeginFrame()
+				layout.UniformInset(12).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+					gtx.Constraints.Min = image.Point{}
+					return p.row(gtx, m, false, 0, localization.For(lang), false)
+				})
+				p.images.EndFrame()
+			})
+			p.Close()
+		}
+	}
 }
 
 // TestRenderCodeColors draws code in several languages, every class of
