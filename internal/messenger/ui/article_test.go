@@ -196,3 +196,40 @@ func (h *entityHarness) pointerDrag(from, to f32.Point) {
 		h.frame()
 	}
 }
+
+// Anchors are kept with the details around them, outermost first: of
+// blocks, of list items, and inside their text; the first of a name is
+// the one links go to. Drawn, each is where its block or item is.
+func TestArticleAnchors(t *testing.T) {
+	inline := richText("текст")
+	inline.Anchors = []string{"inline"}
+	page := model.RichPage{Blocks: []model.RichBlock{
+		{Kind: model.RichParagraph, Anchor: "top", Text: inline},
+		{Kind: model.RichList, Items: []model.RichListItem{{Text: richText("первый")}, {Anchor: "item", Text: richText("второй")}}},
+		{Kind: model.RichDetails, Open: true, Text: richText("Снаружи"), Blocks: []model.RichBlock{
+			{Kind: model.RichDetails, Text: richText("Внутри"), Blocks: []model.RichBlock{{Kind: model.RichAnchor, Anchor: "deep"}, {Kind: model.RichParagraph, Anchor: "top", Text: richText("второй top")}}},
+		}},
+	}}
+	doc := prepareArticle(page, localization.For("ru"), time.Now())
+	if len(doc.anchors["top"]) != 0 || len(doc.anchors["inline"]) != 0 || len(doc.anchors["item"]) != 0 {
+		t.Fatalf("anchors outside details are hidden: %v", doc.anchors)
+	}
+	if deep := doc.anchors["deep"]; len(deep) != 2 || deep[0] != doc.blocks[2] || deep[1] != doc.blocks[2].children[0] {
+		t.Fatalf("the deep anchor is hidden by %v", deep)
+	}
+	h := newEntityHarness(t, richMessage(page), model.KindUser)
+	tops := h.row.articleState.tops
+	if tops["top"] != 0 || tops["inline"] != 0 || tops["item"] <= 0 {
+		t.Fatalf("tops %v", tops)
+	}
+	if _, ok := tops["deep"]; ok {
+		t.Fatal("an anchor in closed details is laid out")
+	}
+	if !h.row.articleState.openTo(h.row.article, "deep") || h.row.articleState.openTo(h.row.article, "nowhere") {
+		t.Fatal("openTo finds the anchors it should not, or not those it should")
+	}
+	h.frame()
+	if deep, item := h.row.articleState.tops["deep"], tops["item"]; deep <= item {
+		t.Fatalf("opened, the deep anchor is at %d, over the item at %d", deep, item)
+	}
+}

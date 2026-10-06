@@ -248,6 +248,9 @@ func (p *chatPage) row(gtx layout.Context, m model.Message, date bool, join bubb
 	return dims
 }
 
+// bubblePadTop is the space over what a bubble holds.
+const bubblePadTop unit.Dp = 8
+
 // bubble draws a message's bubble and what it holds.
 func (p *chatPage) bubble(gtx layout.Context, r *messageRow, m model.Message, join bubbleJoin, l localization.Catalog, animate bool) layout.Dimensions {
 	shape := shapeOf(gtx, join, m.Outgoing)
@@ -271,7 +274,7 @@ func (p *chatPage) bubble(gtx layout.Context, r *messageRow, m model.Message, jo
 		}),
 		layout.Stacked(func(gtx layout.Context) layout.Dimensions {
 			content := func(gtx layout.Context) layout.Dimensions {
-				return layout.Inset{Top: 8, Bottom: 7, Left: 12, Right: 12}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				return layout.Inset{Top: bubblePadTop, Bottom: 7, Left: 12, Right: 12}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 					return layout.Flex{Axis: layout.Vertical}.Layout(gtx, p.bubbleContent(gtx, r, m, join, l, animate)...)
 				})
 			}
@@ -328,7 +331,16 @@ func (p *chatPage) bubbleContent(gtx layout.Context, r *messageRow, m model.Mess
 		children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions { return pollLayout(gtx, m.Poll, l) }))
 	}
 	if r.article != nil {
-		children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions { return p.articleLayout(gtx, r, m, l, animate) }))
+		// What is over the article is measured, for links to its anchors.
+		above := children
+		children = []layout.FlexChild{layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			dims := layout.Flex{Axis: layout.Vertical}.Layout(gtx, above...)
+			r.articleAbove = dims.Size.Y
+			return dims
+		}), layout.Rigid(func(gtx layout.Context) layout.Dimensions { return p.articleLayout(gtx, r, m, l, animate) })}
+		if r.article.part && p.openArticle != nil {
+			children = append(children, vspace(6), layout.Rigid(func(gtx layout.Context) layout.Dimensions { return p.showMore(gtx, r, m, l) }))
+		}
 	} else if len(m.Attachments) > 1 {
 		seen := map[string]bool{}
 		for _, member := range m.Attachments {

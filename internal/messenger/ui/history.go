@@ -82,6 +82,9 @@ type messageRow struct {
 	key          model.MessageKey
 	article      *articleDoc
 	articleState articleState
+	// articleAbove is how high what is over the article in the bubble
+	// is, as the last frame drew it.
+	articleAbove int
 	// alone is set for the row of an article's photo, which opens alone,
 	// not among the chat's photos.
 	alone bool
@@ -105,6 +108,11 @@ type chatPage struct {
 	// highlightUntil; infoAsked, set when the menu asks for the chat's info.
 	highlight      model.MessageID
 	highlightUntil time.Time
+	// anchorJump is the message whose article a link asked to scroll to
+	// an anchor of (articleState.jump), while the list was laid out;
+	// anchorWait counts the frames the anchor was not laid out in.
+	anchorJump model.MessageID
+	anchorWait int
 	// jumpPending is a message a quote asked to jump to while the list was
 	// being laid out: moving the list then draws a frame from a position
 	// that is gone, so the jump is made at the start of the next layout.
@@ -194,6 +202,9 @@ type chatPage struct {
 	// openPhoto shows a photo in the viewer; nil leaves photos inline.
 	openPhoto func(model.Message)
 	openAlone func(model.Message)
+	// openArticle shows the whole of rich message m, at its anchor
+	// fragment unless it is empty; nil when it cannot.
+	openArticle func(m model.Message, fragment string)
 	// openChat opens a chat, at a message unless it is 0.
 	openChat  func(model.Chat, model.MessageID)
 	openAudio func(model.Message)
@@ -423,6 +434,10 @@ func (p *chatPage) layoutHistory(gtx layout.Context, c model.Chat, l localizatio
 	if id := p.jumpPending; id != 0 {
 		p.jumpPending = 0
 		p.jumpTo(id)
+	}
+	if id := p.anchorJump; id != 0 {
+		p.anchorJump = 0
+		p.scrollToAnchor(gtx, id)
 	}
 	p.updateDelete(c.ID, l)
 	p.updateMembership(c.ID, l)

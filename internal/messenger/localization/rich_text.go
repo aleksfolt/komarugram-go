@@ -15,6 +15,8 @@ func init() {
 	TelegramKeys["rich.click_to_view"] = "lng_iv_click_to_view"
 	TelegramKeys["rich.unsupported_title"] = "lng_unsupported_block_title"
 	TelegramKeys["rich.unsupported_text"] = "lng_unsupported_block_text"
+	TelegramKeys["rich.anchor_missing"] = "lng_iv_not_found_in_message"
+	TelegramKeys["rich.show_more"] = "lng_view_button_full_article"
 	for key, texts := range map[string][2]string{
 		"text.copy_code": {"Копировать", "Copy"},
 		"text.copied":    {"Текст скопирован", "Text copied"},
@@ -34,6 +36,10 @@ func init() {
 		"rich.click_to_view":     {"Нажмите, чтобы посмотреть", "Click to View"},
 		"rich.unsupported_title": {"Неподдерживаемый блок", "Unsupported Block"},
 		"rich.unsupported_text":  {"Обновите Telegram, чтобы увидеть эту часть сообщения", "Update Telegram to view this part of the message"},
+		// A link to an anchor the article does not have; the button under
+		// an article Telegram sent cut short.
+		"rich.anchor_missing": {"Похоже, эта ссылка недействительна.", "This link appears to be invalid."},
+		"rich.show_more":      {"Показать ещё", "Show more"},
 	} {
 		russian[key], english[key] = texts[0], texts[1]
 	}

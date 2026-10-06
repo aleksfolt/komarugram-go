@@ -1,0 +1,375 @@
+// SPDX-License-Identifier: Unlicense OR MIT
+
+package ui
+
+import (
+	"context"
+	"image"
+	"sync"
+
+	"gio-mw/defaults"
+	"gio-mw/defaults/schemes"
+	"gio-mw/exp/appearance"
+	"gio-mw/token"
+	"gio-mw/widget/scroll"
+
+	"gioui.org/io/system"
+	"gioui.org/layout"
+	"gioui.org/unit"
+
+	"komarugram/internal/appwindow"
+	"komarugram/internal/messenger/localization"
+	"komarugram/internal/messenger/model"
+)
+
+// articleWindow shows the whole of a rich message in a window of its own,
+// as Telegram Desktop's Instant View window does for one Telegram sent cut
+// short (iv::Instance::showRichMessage). It shows the part the history has
+// at once, and the whole article once the store loads it. Its article is
+// drawn by a page of its own, as the history draws one, with its own photo
+// viewer: a window draws on its own GPU context and runs on its own
+// goroutine, and shares only the store with the chat.
+type articleWindow struct {
+	w *appwindow.Window
+	// invalidate asks for a frame: the window's, or a test's.
+	invalidate func()
+	page       *chatPage
+	viewer     *photoViewer
+	images     imageOps
+	catalog    localization.Catalog
+	mode       func() themeMode
+	list       scroll.List
+	// message is the rich message shown: the part, then the whole one.
+	message model.Message
+	// fragment is the anchor to go to once the article that has it is
+	// shown; whole is set once the whole article is, or will not be.
+	fragment string
+	whole    bool
+	// goTo takes the anchors links in the chat ask the open window to go
+	// to.
+	goTo   chan string
+	loaded chan articleLoad
+	cancel context.CancelFunc
+	theme  *token.Theme
+	dark   bool
+	// themeFonts is the version of the fonts the theme was made with.
+	themeFonts uint64
+	closing    bool
+}
+
+// articleLoad is what the store answered for the whole article.
+type articleLoad struct {
+	page model.RichPage
+	err  error
+}
+
+// Width of the article in the window, and its margins, in dp.
+const (
+	articleWindowWidth  = 680
+	articleWindowMargin = 20
+)
+
+func newArticleWindow(w *appwindow.Window, source model.ConversationStore, catalog localization.Catalog, mode func() themeMode, m model.Message, fragment string) *articleWindow {
+	a := newArticleView(source, catalog, m, fragment, w.Invalidate)
+	a.w, a.mode = w, mode
+	return a
+}
+
+// newArticleView is what an article window shows of m, at its anchor
+// fragment unless it is empty, without the window; invalidate asks for a
+// frame.
+func newArticleView(source model.ConversationStore, catalog localization.Catalog, m model.Message, fragment string, invalidate func()) *articleWindow {
+	a := &articleWindow{invalidate: invalidate, catalog: catalog, message: m, fragment: fragment, goTo: make(chan string, 1)}
+	a.list.Axis = layout.Vertical
+	a.page = newChatPage(source, invalidate)
+	a.page.images = &a.images
+	a.page.rows = map[model.MessageID]*messageRow{}
+	a.page.chat = m.Key.ChatID
+	a.viewer = newPhotoViewer(source, &a.images, invalidate)
+	a.page.openAlone = func(photo model.Message) { a.viewer.OpenAlone(m.Key.ChatID, photo) }
+	// A link to an anchor the part does not have goes there once the whole
+	// article is shown.
+	a.page.openArticle = func(_ model.Message, name string) {
+		a.fragment = name
+		if a.whole {
+			a.goToFragment()
+		}
+	}
+	// The fragment is gone to in the first frame, or once the whole
+	// article is shown when the part does not have it.
+	if fragment != "" {
+		a.page.anchorJump = m.Key.MessageID
+	}
+	store, ok := source.(model.RichStore)
+	if !ok || m.Rich != nil && !m.Rich.Part {
+		a.whole = true
+		return a
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	a.cancel = cancel
+	a.loaded = make(chan articleLoad, 1)
+	go func() {
+		page, err := store.RichMessage(ctx, m.Key)
+		a.loaded <- articleLoad{page: page, err: err}
+		invalidate()
+	}()
+	return a
+}
+
+func (a *articleWindow) Theme(gtx layout.Context) *token.Theme {
+	mode := a.mode()
+	dark := mode == themeDark || mode == themeAuto && a.w.Appearance.Scheme() == appearance.Dark
+	if v := defaults.FontsVersion(); a.theme == nil || v != a.themeFonts || dark != a.dark {
+		a.themeFonts, a.dark = v, dark
+		scheme := schemes.SchemeBaselineLight()
+		if dark {
+			scheme = schemes.SchemeBaselineDark()
+		}
+		a.theme = defaults.NewTheme(gtx, scheme)
+	}
+	a.w.SetFrameDark(dark)
+	a.w.SetFrameColor(a.theme.Scheme.Surface.Color.AsNRGBA())
+	return a.theme
+}
+
+func (a *articleWindow) Update(layout.Context) {}
+
+func (a *articleWindow) Layout(gtx layout.Context) {
+	a.images.BeginFrame()
+	defer a.images.EndFrame()
+	a.layout(gtx, a.w.Motion.AnimationsEnabled())
+}
+
+// layout draws the article, and over it what it opens: menus, dialogs,
+// toasts and the photo viewer.
+func (a *articleWindow) layout(gtx layout.Context, animate bool) {
+	p, l := a.page, a.catalog
+	p.animate = animate
+	p.entityMenu.watch(gtx)
+	select {
+	case name := <-a.goTo:
+		a.fragment = name
+		a.goToFragment()
+	default:
+	}
+	select {
+	case got := <-a.loaded:
+		a.whole = true
+		if got.err != nil {
+			p.toast.Show(mediaErrorText(got.err))
+		} else {
+			a.message.Rich = &got.page
+			a.message.ContentRevision++
+		}
+		if a.fragment != "" {
+			a.goToFragment()
+		}
+	default:
+	}
+	if id := p.anchorJump; id != 0 {
+		p.anchorJump = 0
+		a.scrollToAnchor(gtx, id)
+	}
+	size := gtx.Constraints.Max
+	fillRect(gtx, scheme(gtx).Surface.Color, size)
+	a.list.Layout(gtx, 1, func(gtx layout.Context, _ int) layout.Dimensions {
+		return layout.UniformInset(articleWindowMargin).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+			return layout.N.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				gtx.Constraints.Max.X = min(gtx.Constraints.Max.X, gtx.Dp(articleWindowWidth))
+				gtx.Constraints.Min = image.Pt(gtx.Constraints.Max.X, 0)
+				return a.article(gtx, l, animate)
+			})
+		})
+	})
+	p.keyboardEvents(gtx)
+	p.botUpdate(l)
+	p.errorMu.Lock()
+	if err := p.mediaError; err != nil {
+		p.mediaError = nil
+		p.toast.Show(mediaErrorText(err))
+	}
+	p.errorMu.Unlock()
+	p.toast.Layout(gtx, image.Rectangle{Max: size})
+	p.entityMenuLayout(gtx, l)
+	p.layoutDialogs(gtx, l)
+	if a.viewer.open {
+		a.viewer.Layout(gtx, l, animate)
+	}
+}
+
+// article draws the article, and under it, while the whole one loads, that
+// it is loading. A fragment waits for the article that has it to be laid
+// out.
+func (a *articleWindow) article(gtx layout.Context, l localization.Catalog, animate bool) layout.Dimensions {
+	p, m := a.page, a.message
+	r := p.rows[m.Key.MessageID]
+	if r == nil || r.revision != m.ContentRevision {
+		r = newMessageRow(m, l, gtx.Now)
+		p.rows[m.Key.MessageID] = r
+	}
+	r.refreshDates(gtx, m, l)
+	if r.article == nil {
+		return layout.Dimensions{}
+	}
+	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions { return p.articleLayout(gtx, r, m, l, animate) }),
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			if a.whole {
+				return layout.Dimensions{}
+			}
+			return layout.Inset{Top: 16}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+					return p.loader.sized(gtx, l, 32)
+				})
+			})
+		}))
+}
+
+// goToFragment goes to the anchor the window was asked for, and tells
+// when the whole article does not have it; one the part does not have
+// waits for the whole. The row of an article that just came is made in the
+// next frame: the jump waits for it.
+func (a *articleWindow) goToFragment() {
+	name := a.fragment
+	if name == "" {
+		return
+	}
+	r := a.page.rows[a.message.Key.MessageID]
+	if r == nil || r.revision != a.message.ContentRevision || r.article == nil {
+		a.page.anchorJump, a.page.anchorWait = a.message.Key.MessageID, 0
+		a.invalidate()
+		return
+	}
+	if !r.articleState.openTo(r.article, name) {
+		if a.whole {
+			a.fragment = ""
+			a.page.toast.Show(a.catalog.T("rich.anchor_missing"))
+		}
+		return
+	}
+	a.fragment = ""
+	r.articleState.jump = name
+	a.page.anchorJump, a.page.anchorWait = r.key.MessageID, 0
+	a.invalidate()
+}
+
+// scrollToAnchor scrolls the window to the anchor a link asked for, once it
+// is laid out.
+func (a *articleWindow) scrollToAnchor(gtx layout.Context, id model.MessageID) {
+	if a.fragment != "" {
+		// The row of the whole article is made now: the fragment is gone to
+		// in the next frame.
+		a.goToFragment()
+		return
+	}
+	r := a.page.rows[id]
+	top, ok := a.page.anchorTop(r)
+	if !ok {
+		return
+	}
+	a.list.Position = layout.Position{First: 0, Offset: gtx.Dp(articleWindowMargin) + top, BeforeEnd: true}
+	a.invalidate()
+}
+
+func (a *articleWindow) Locale() system.Locale {
+	return system.Locale{Language: string(a.catalog.Language()), Direction: system.LTR}
+}
+
+func (a *articleWindow) SetSuspended(hidden bool) {
+	if hidden {
+		a.viewer.Release()
+		a.images.Release()
+	}
+}
+
+// Close is called by the window loop after the window is gone.
+func (a *articleWindow) Close() {
+	if a.cancel != nil {
+		a.cancel()
+	}
+	a.viewer.Destroy()
+	// The page saves no viewport of the chat: it shows none of it.
+	a.page.chat = 0
+	a.page.Close()
+}
+
+// articleWindows are the article windows opened from one account window,
+// by message. They read that account's store, so they close with it.
+type articleWindows struct {
+	mu   sync.Mutex
+	open map[model.MessageKey]*articleWindow
+}
+
+// raise brings the window of key to the front, going to the anchor
+// fragment unless it is empty, and reports whether one is open.
+func (ws *articleWindows) raise(key model.MessageKey, fragment string) bool {
+	ws.mu.Lock()
+	a := ws.open[key]
+	ws.mu.Unlock()
+	if a == nil {
+		return false
+	}
+	if fragment != "" {
+		select {
+		case a.goTo <- fragment:
+		default:
+		}
+	}
+	a.w.Perform(system.ActionRaise)
+	a.w.Invalidate()
+	return true
+}
+
+func (ws *articleWindows) add(key model.MessageKey, a *articleWindow) {
+	ws.mu.Lock()
+	defer ws.mu.Unlock()
+	if ws.open == nil {
+		ws.open = map[model.MessageKey]*articleWindow{}
+	}
+	ws.open[key] = a
+}
+
+func (ws *articleWindows) remove(key model.MessageKey) {
+	ws.mu.Lock()
+	defer ws.mu.Unlock()
+	delete(ws.open, key)
+}
+
+func (ws *articleWindows) closeAll() {
+	ws.mu.Lock()
+	windows := make([]*appwindow.Window, 0, len(ws.open))
+	for _, a := range ws.open {
+		windows = append(windows, a.w)
+	}
+	ws.mu.Unlock()
+	for _, w := range windows {
+		w.Perform(system.ActionClose)
+	}
+}
+
+// openArticleWindow shows the whole of rich message m in a window, at its
+// anchor fragment unless it is empty; the window of m, when open, comes to
+// the front.
+func (a *App) openArticleWindow(m model.Message, fragment string) {
+	if a.articleWindows.raise(m.Key, fragment) {
+		return
+	}
+	catalog := a.catalog()
+	title := ""
+	for _, c := range a.store.Chats() {
+		if c.ID == m.Key.ChatID {
+			title = c.Title
+		}
+	}
+	source := a.history.source
+	a.openWindow(appwindow.Spec{
+		Options: appwindow.Options{Title: title, Width: unit.Dp(articleWindowWidth + 2*articleWindowMargin + 40), Height: unit.Dp(860), Locale: a.Locale()},
+		Build: func(w *appwindow.Window) appwindow.Content {
+			window := newArticleWindow(w, source, catalog, a.themeMode, m, fragment)
+			a.articleWindows.add(m.Key, window)
+			return window
+		},
+		// Build and Closed run on the new window's goroutine, in that order.
+		Closed: func() { a.articleWindows.remove(m.Key) },
+	})
+}

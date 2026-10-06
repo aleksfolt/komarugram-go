@@ -124,9 +124,18 @@ sequence of runs, each block's a leaf that `textFlow` sets in its role
 the blocks, registers one text area of the article's size and lays the
 controls over it (code's copy, details' headers, media, buttons, cards).
 `articleState` on the row keeps details opened, slideshows' items and
-the surfaces. `ARTICLE_PNG_DIR=/tmp/article go test ./internal/messenger/ui
--run TestRenderArticle` (`render-all -only article`) draws every kind of
-block, narrow and wide, in both themes.
+the surfaces, and where its anchors were laid out (`tops`): a link to
+`#name` opens the details over the anchor and scrolls to it in the next
+frame (`article_anchors.go`; the history with `restore`, under
+`bubblePadTop` and `messageRow.articleAbove`). An article Telegram sent
+cut short has "Show more" under it (`showMore`), which opens
+`articleWindow` (`article_window.go`): a window of its own whose
+`chatPage` draws the article as the history does, with its own photo
+viewer, dialogs and toasts; `newArticleView` is the same without the
+window, for tests. `ARTICLE_PNG_DIR=/tmp/article go test
+./internal/messenger/ui -run TestRenderArticle` (`render-all -only
+article`) draws every kind of block, and a part with its button, narrow
+and wide, in both themes.
 
 Hashtags, commands, email, phone and card numbers and formatted dates
 act on a click (`history_entities.go`, `chatPage.activateRun`). A phone

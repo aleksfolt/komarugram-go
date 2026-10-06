@@ -51,9 +51,21 @@ func RichExample(part bool) model.RichPage {
 	link.Entities[0].URL = "https://telegram.org"
 	intro.Append(link)
 	intro.Append(text("."))
+	// Links to an anchor in the part, and to one only the whole article
+	// has.
+	var jump model.RichText
+	jump.Append(text("Перейти: "))
+	toTable := styled("к таблице", "url")
+	toTable.Entities[0].URL = "#table"
+	jump.Append(toTable)
+	jump.Append(text(" · "))
+	toEnd := styled("к окончанию", "url")
+	toEnd.Entities[0].URL = "#end"
+	jump.Append(toEnd)
 	page := model.RichPage{Part: part, Blocks: []model.RichBlock{
 		{Kind: model.RichHeading, Level: 1, Text: text("Rich-сообщение")},
 		{Kind: model.RichParagraph, Text: intro},
+		{Kind: model.RichParagraph, Text: jump},
 		{Kind: model.RichList, Items: []model.RichListItem{
 			{Text: text("Маркированный пункт")},
 			{Checkbox: true, Checked: true, Text: text("Сделанная задача")},
@@ -64,7 +76,7 @@ func RichExample(part bool) model.RichPage {
 		{Kind: model.RichCode, Language: "go", Text: text("fmt.Println(\"Привет\")")},
 		{Kind: model.RichMath, Formula: `\frac{a}{b} = \sqrt{x^2 + y^2}`},
 		{Kind: model.RichMediaBlock, Media: []model.RichMedia{{Kind: model.MessagePhoto, Media: &model.MessageMedia{ID: "demo/photo", MIMEType: "image/png", Width: 640, Height: 360}}}, Caption: text("Фото в статье")},
-		{Kind: model.RichTable, Text: text("Таблица"), Bordered: true, Rows: []model.RichTableRow{
+		{Kind: model.RichTable, Anchor: "table", Text: text("Таблица"), Bordered: true, Rows: []model.RichTableRow{
 			{Cells: []model.RichTableCell{{Header: true, Text: text("Блок")}, {Header: true, Text: text("Этап")}}},
 			{Cells: []model.RichTableCell{{Text: text("Формулы")}, {Text: text("4")}}},
 		}},
@@ -74,7 +86,7 @@ func RichExample(part bool) model.RichPage {
 	}
 	return model.RichPage{Blocks: append(page.Blocks,
 		model.RichBlock{Kind: model.RichDivider},
-		model.RichBlock{Kind: model.RichDetails, Text: text("Подробнее"), Blocks: []model.RichBlock{{Kind: model.RichParagraph, Text: text("Окончание статьи, которое пришло только целиком.")}}},
+		model.RichBlock{Kind: model.RichDetails, Text: text("Подробнее"), Blocks: []model.RichBlock{{Kind: model.RichParagraph, Anchor: "end", Text: text("Окончание статьи, которое пришло только целиком.")}}},
 		model.RichBlock{Kind: model.RichFooter, Text: text("Конец статьи")},
 	)}
 }

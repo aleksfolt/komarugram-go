@@ -5,7 +5,6 @@ package tgstore
 import (
 	"context"
 	"fmt"
-	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -164,7 +163,7 @@ func (c *richConverter) appendBlock(out []model.RichBlock, block tg.PageBlockCla
 	case *tg.PageBlockDivider:
 		out = append(out, model.RichBlock{Kind: model.RichDivider})
 	case *tg.PageBlockAnchor:
-		if name := anchorName(b.Name); name != "" {
+		if name := model.AnchorName(b.Name); name != "" {
 			out = append(out, model.RichBlock{Kind: model.RichAnchor, Anchor: name})
 		}
 	case *tg.PageBlockList:
@@ -539,7 +538,7 @@ func (c *richConverter) appendText(out *model.RichText, t tg.RichTextClass, mode
 		out.Text += alt
 		out.Mark(from, model.Entity{Kind: "emoji", DocumentID: t.DocumentID})
 	case *tg.TextAnchor:
-		if name := anchorName(t.Name); name != "" {
+		if name := model.AnchorName(t.Name); name != "" {
 			out.Anchors = append(out.Anchors, name)
 		}
 		c.appendText(out, t.Text, mode, depth)
@@ -571,15 +570,6 @@ func dateFlags(relative, shortTime, longTime, shortDate, longDate, dayOfWeek boo
 		}
 	}
 	return f
-}
-
-// anchorName is an anchor's name as links find it, as Telegram Desktop
-// normalizes it: unescaped, trimmed, lower case, without leading '#'.
-func anchorName(name string) string {
-	if unescaped, err := url.PathUnescape(name); err == nil {
-		name = unescaped
-	}
-	return strings.TrimLeft(strings.ToLower(strings.TrimSpace(name)), "#")
 }
 
 // formulaSource is a formula's LaTeX, trimmed, without the dollars it may

@@ -37,6 +37,40 @@ type articleState struct {
 	// block id.
 	buttons map[int][]surface
 	cards   map[int][]surface
+	// tops are where the anchors are in the article as the last frame drew
+	// it, by name; jump is an anchor a link asked to go to.
+	tops map[string]int
+	jump string
+	// more is the button under an article Telegram sent cut short.
+	more surface
+}
+
+// openTo opens the details that hide the anchor name of doc, and reports
+// whether doc has it.
+func (s *articleState) openTo(doc *articleDoc, name string) bool {
+	details, ok := doc.anchors[name]
+	if !ok {
+		return false
+	}
+	for _, b := range details {
+		if s.toggled == nil {
+			s.toggled = map[int]bool{}
+		}
+		s.toggled[b.id] = !b.open
+	}
+	return true
+}
+
+// mark keeps where the anchors of names are, the first of a name.
+func (s *articleState) mark(names []string, y int) {
+	for _, name := range names {
+		if s.tops == nil {
+			s.tops = map[string]int{}
+		}
+		if _, ok := s.tops[name]; !ok {
+			s.tops[name] = y
+		}
+	}
 }
 
 func (s *articleState) toggle(id int) *surface {
@@ -84,6 +118,7 @@ func (p *chatPage) articleLayout(gtx layout.Context, r *messageRow, m model.Mess
 	}
 	p.textEvents(gtx, r, animate)
 	r.text.fragments = r.text.fragments[:0]
+	clear(r.articleState.tops)
 	gtx.Constraints.Min = image.Point{}
 	a := &articleDraw{p: p, r: r, m: m, l: l, doc: doc, animate: animate}
 	// Controls are recorded with the blocks and laid out after the text's
@@ -113,6 +148,7 @@ func (a *articleDraw) stack(gtx layout.Context, blocks []*articleBlock, origin i
 			y += gtx.Dp(unit.Dp(b.skip))
 		}
 		pos := image.Pt(0, y)
+		a.r.articleState.mark(b.anchors, origin.Y+y)
 		stack := op.Offset(pos).Push(gtx.Ops)
 		y += a.block(gtx, b, origin.Add(pos))
 		stack.Pop()
@@ -250,6 +286,7 @@ func (a *articleDraw) list(gtx layout.Context, b *articleBlock, origin image.Poi
 			y += gtx.Dp(3)
 		}
 		pos := image.Pt(x, y)
+		a.r.articleState.mark(it.anchors, origin.Y+y)
 		h := 0
 		offset(inner, pos, func(gtx layout.Context) layout.Dimensions {
 			if it.leaf >= 0 {
@@ -338,4 +375,34 @@ func (a *articleDraw) embedPost(gtx layout.Context, b *articleBlock, origin imag
 func stroke(gtx layout.Context, rect image.Rectangle, radius, width int, col color.NRGBA) {
 	path := clip.UniformRRect(rect, radius).Path(gtx.Ops)
 	paint.FillShape(gtx.Ops, col, clip.Stroke{Path: path, Width: float32(width)}.Op())
+}
+
+// showMore draws the button under an article Telegram sent cut short,
+// which shows the whole of it, as Telegram Desktop's "Show more" view
+// button does: as wide as the article, in the color of a reply's quote.
+func (p *chatPage) showMore(gtx layout.Context, r *messageRow, m model.Message, l localization.Catalog) layout.Dimensions {
+	if r.articleState.more.Clicked(gtx) && p.openArticle != nil {
+		p.openArticle(m, "")
+	}
+	col := scheme(gtx).Primary.Color
+	if !m.Outgoing && m.SenderID != 0 {
+		col = senderColor(gtx, m.SenderID)
+	}
+	macro := op.Record(gtx.Ops)
+	dims := layout.UniformInset(8).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		return label(gtx, l.T("rich.show_more"), token.TypestyleLabelLargeEmphasized, col, 1)
+	})
+	call := macro.Stop()
+	size := image.Pt(min(max(dims.Size.X, r.text.size.X), gtx.Constraints.Max.X), dims.Size.Y)
+	radius := gtx.Dp(6)
+	style := surfaceStyle{radius: radius, background: col.SetOpacity(.12), content: col}
+	return r.articleState.more.Layout(gtx, size, style, func(gtx layout.Context) layout.Dimensions {
+		defer clip.UniformRRect(image.Rectangle{Max: size}, radius).Push(gtx.Ops).Pop()
+		fillRect(gtx, col, image.Pt(gtx.Dp(3), size.Y))
+		offset(gtx, image.Pt((size.X-dims.Size.X)/2, 0), func(gtx layout.Context) layout.Dimensions {
+			call.Add(gtx.Ops)
+			return dims
+		})
+		return layout.Dimensions{Size: size}
+	})
 }

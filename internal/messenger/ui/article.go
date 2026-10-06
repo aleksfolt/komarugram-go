@@ -84,7 +84,8 @@ type articleBlock struct {
 	// author and date head a post embedded.
 	author string
 	date   time.Time
-	anchor string
+	// anchors are the names of the anchors at the block's top.
+	anchors []string
 }
 
 // articleItem is an item of a list: its marker, and its text or blocks.
@@ -93,6 +94,7 @@ type articleItem struct {
 	checkbox, checked bool
 	leaf              int
 	blocks            []*articleBlock
+	anchors           []string
 }
 
 // articleRow is a row of a table.
@@ -133,8 +135,16 @@ type articleDoc struct {
 	// runes counts the runes of runs.
 	runes int
 	ids   int
-	l     localization.Catalog
-	now   time.Time
+	// anchors are the names links to #name go to, each with the details
+	// that hide it, the outermost first; the first anchor of a name is
+	// the one links go to. details are the details around what is
+	// prepared.
+	anchors map[string][]*articleBlock
+	details []*articleBlock
+	// part is set when Telegram sent the article cut short.
+	part bool
+	l    localization.Catalog
+	now  time.Time
 }
 
 // Space above a block after another one, in dp, after Telegram Desktop's
@@ -162,9 +172,27 @@ var (
 // prepareArticle prepares page to be drawn, its dates written as l writes
 // them at now.
 func prepareArticle(page model.RichPage, l localization.Catalog, now time.Time) *articleDoc {
-	d := &articleDoc{l: l, now: now}
+	d := &articleDoc{l: l, now: now, part: page.Part}
 	d.blocks = d.blocksOf(page.Blocks)
 	return d
+}
+
+// mark takes the anchors of names at what is prepared, and returns them.
+func (d *articleDoc) mark(names ...string) []string {
+	var out []string
+	for _, name := range names {
+		if name == "" {
+			continue
+		}
+		if _, ok := d.anchors[name]; !ok {
+			if d.anchors == nil {
+				d.anchors = map[string][]*articleBlock{}
+			}
+			d.anchors[name] = slices.Clone(d.details)
+		}
+		out = append(out, name)
+	}
+	return out
 }
 
 // leaf adds t as a leaf set in style, with extra entities over all of it,
@@ -281,7 +309,9 @@ func (d *articleDoc) blockOf(b model.RichBlock) *articleBlock {
 	case model.RichDetails:
 		a = d.block(articleDetails, articleSkipBlock)
 		a.title = d.leaf(b.Text, flowStyle{weight: font.SemiBold})
+		d.details = append(d.details, a)
 		a.children = d.blocksOf(b.Blocks)
+		d.details = d.details[:len(d.details)-1]
 		a.open = b.Open
 		d.wide = true
 	case model.RichMediaBlock:
@@ -313,8 +343,8 @@ func (d *articleDoc) blockOf(b model.RichBlock) *articleBlock {
 	if a == nil {
 		return nil
 	}
-	a.anchor = b.Anchor
-	if a.kind == articleFlow && a.leaf < 0 && a.anchor == "" {
+	a.anchors = d.mark(slices.Concat([]string{b.Anchor}, b.Text.Anchors, b.Caption.Anchors)...)
+	if a.kind == articleFlow && a.leaf < 0 && len(a.anchors) == 0 {
 		return nil
 	}
 	return a
@@ -352,6 +382,7 @@ func (d *articleDoc) list(b model.RichBlock) *articleBlock {
 	markers := b.ListMarkers()
 	for i, item := range b.Items {
 		it := articleItem{marker: markers[i], checkbox: item.Checkbox, checked: item.Checked, leaf: -1}
+		it.anchors = d.mark(slices.Concat([]string{item.Anchor}, item.Text.Anchors)...)
 		if item.Text.Text != "" {
 			it.leaf = d.leaf(item.Text, articleBody)
 		} else {

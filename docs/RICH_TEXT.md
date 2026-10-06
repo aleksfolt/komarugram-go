@@ -3,8 +3,9 @@
 Status: implementation started, 2026-10-04. Stage 0 (code and quote
 blocks; entities clicks act on and formatted dates, 2026-10-06), stage 1
 (reading rich messages, 2026-10-05), stage 2 (the article engine, drawn
-in the bubble, 2026-10-06) and stage 4a (code highlighting, 2026-10-05)
-are implemented; see "Implementation progress" below.
+in the bubble, 2026-10-06), anchors and the whole article in a window
+of its own (stage 3, 2026-10-06) and stage 4a (code highlighting,
+2026-10-05) are implemented; see "Implementation progress" below.
 The research notes gather what Telegram sends, how Telegram Desktop shows
 it, what KomaruGram has, and a
 measured comparison of the libraries the work needs: a Markdown parser
@@ -1025,7 +1026,7 @@ large and needs a dynamic linker.
 | 0 | Finish ordinary entities: `pre` as a block with its language (kept in `model.Entity`) and copy button; blockquote with its bar and `collapsed`; clickable hashtag, bot command, email, phone; formatted date | — |
 | 1 | `model.RichPage`; conversion from `tg` (RichText into runs and entities, PageBlock into blocks); stored in the cache's JSON; `part` and `messages.getRichMessage`; summary text for the chat list, replies and FTS | gotd v0.162.0 (layer 229) |
 | 2 | Article engine: headings, nested lists with numbering and checkboxes, quotes, code, divider, tables with spans and alignment, details, media blocks, sub- and superscript, marks, anchors, inline images, buttons; selection across blocks | — |
-| 3 | The engine in the bubble: heights in `HeightIndex` and the layout cache, clicks, lazy media | — |
+| 3 | The engine in the bubble: links to anchors, "Show more" and the article window (done); heights in `HeightIndex` and the layout cache, lazy media, a table's sideways scrolling | — |
 | 4 | Formulas: the RaTeX module, its build script, the Go drawer of its display list, KaTeX fonts, fallback font for Cyrillic, size bounds | decided: RaTeX |
 | 4a | Code highlighting for `pre`, rich messages and `.md`: the Go port of libprisma, worker goroutine, LRU cache, deadlines, theme colors | decided: regexp2 v1.12.0 |
 | 5 | `.md` viewer: parse, prepare into the same document, a window with scrolling, search and anchors, limits, "Open file" | Markdown parser |
@@ -1081,9 +1082,8 @@ are not in this plan.
   of `cmd/render-all`; the same example is at the end of demo histories.
 
 Mentions by ID came with the link handling merged from NaixROOT's fork
-(see below); the rest of stage 0, stages 1 and 2 and stage 4a are done
-(below). What is left of the bubble's article is stage 3; RaTeX,
-Markdown and Instant View remain later stages.
+(see below); the rest of stage 0, stages 1 and 2, anchors and the
+article window of stage 3 and stage 4a are done (below). RaTeX, Markdown and Instant View remain later stages.
 
 ### Focused validation
 
@@ -1379,11 +1379,54 @@ bubble's.
   collage opens alone; a row of buttons in an article copies and
   presses a callback, which the bot answers by editing the message.
 
-Left for stage 3: the "Show more" button of a part and the article's
-window, links to anchors (a click on one does nothing yet), a table's
-sideways scrolling.
+### Stage 3, in part: anchors and the whole article
 
-Not drawn: a bot's live drafts (`sendMessageTextDraftAction`,
+2026-10-06, as Telegram Desktop does it (`HistoryView::Message::
+activateRichPagePreparedLink`, `Iv::Instance::showRichMessage`):
+
+- **Anchors** (`ui/article_anchors.go`): a link to `#name` goes to the
+  anchor of that name, normalized as tdesktop does (`model.AnchorName`):
+  a block's, a list item's, or one inside a text, which is its block's
+  top. Preparing the article keeps each anchor with the details around
+  it; a link opens those details, and the history scrolls so that the
+  anchor is at its top once it is laid out, in the next frame (the
+  bubble keeps the height of what is over the article for that). An
+  anchor the message does not have opens the whole article at it when
+  Telegram sent the message cut short, and else tells "This link
+  appears to be invalid." (`lng_iv_not_found_in_message`).
+- **"Show more"** (`lng_view_button_full_article`): under an article
+  Telegram sent cut short, a button as wide as the article, in the color
+  of a reply's quote, as tdesktop's view button.
+- **The article window** (`ui/article_window.go`): the whole article in a
+  window of its own, titled with the chat, as tdesktop's Instant View
+  window shows it; one window to a message, raised and sent to the
+  anchor when asked again, closed with the account window and when it
+  locks. It shows the part at once, and the whole once
+  `messages.getRichMessage` brings it (the store keeps it for offline
+  use); an anchor the part does not have waits for the whole. It draws
+  the article with a page of its own, as the history does: selection and
+  copying, links, entity menus, toasts, details, media in a photo viewer
+  of its own, buttons. Telegram for Android expands the article in its
+  bubble instead (`ChatActivity.loadFullRichMessage`); the maintainer
+  chose the window, which the `.md` viewer and Instant View will share.
+- **Left**: tdesktop's window has back and forward through the anchors
+  gone to, search, zoom, sharing and its menu; an inline anchor goes to
+  the top of its block, not its line; heights in the layout cache, lazy
+  media and a table's sideways scrolling remain.
+- **Tests**: a link to an anchor in closed details scrolls the history
+  there (a double click at its top selects a word of it), a missing
+  anchor tells so or opens the whole article, the anchors kept and laid
+  out, the button only under a part, the window waiting for the whole
+  article and telling of an anchor it does not have; each fails with its
+  code removed. The demo's article is a part with links to an anchor in
+  it and to one only the whole has.
+- **Live**, Linux/X11: in the demo, both links and the button, with the
+  window open and closed; on the maintainer's account, @richtextdemobot's
+  "All Types" links (`media` scrolls to its heading), and "Long
+  Message", whose button opens the whole screenplay, where a footnote's
+  link goes to the footnote and its ↩ back.
+
+Not drawn yet: a bot's live drafts (`sendMessageTextDraftAction`,
 `sendMessageRichMessageDraftAction`, `sendMessageStopDraftAction`;
 tdesktop's `history/history_streamed_drafts.cpp`). The demo bot's
 "Stream Demo" streams one; the client shows nothing until the message it

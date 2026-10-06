@@ -4,6 +4,8 @@ package model
 
 import (
 	"context"
+	"net/url"
+	"strings"
 	"time"
 )
 
@@ -179,4 +181,14 @@ type RichArticle struct {
 // (RichPage.Part).
 type RichStore interface {
 	RichMessage(ctx context.Context, key MessageKey) (RichPage, error)
+}
+
+// AnchorName is an anchor's name, or the target of a link to #name, as
+// links find it, normalized as Telegram Desktop does: unescaped, trimmed,
+// lower case, without leading '#'.
+func AnchorName(name string) string {
+	if unescaped, err := url.PathUnescape(name); err == nil {
+		name = unescaped
+	}
+	return strings.TrimLeft(strings.ToLower(strings.TrimSpace(name)), "#")
 }

@@ -108,10 +108,13 @@ type App struct {
 	// forum; a topic opens as thread, like comments.
 	forum  *forumPage
 	viewer *photoViewer
-	// openWindow and photoWindows are the viewer windows' host and list.
-	openWindow   func(appwindow.Spec)
-	photoWindows photoWindows
-	settings     *settingsPage
+	// openWindow is the host of the windows the viewer and articles open
+	// in; photoWindows and articleWindows, their lists, which close with
+	// this window and when it locks.
+	openWindow     func(appwindow.Spec)
+	photoWindows   photoWindows
+	articleWindows articleWindows
+	settings       *settingsPage
 	// sessionEnded asks what to do once Telegram ended the session.
 	sessionEnded *sessionEndedDialog
 	// connectionFailed offers to connect again once the connection stopped.
@@ -482,6 +485,10 @@ func New(w *appwindow.Window, store model.Store, services Services) *App {
 		if services.OpenWindow != nil {
 			a.openWindow = services.OpenWindow
 			a.viewer.popout = a.openPhotoWindow
+			a.history.openArticle = a.openArticleWindow
+			if a.comments != nil {
+				a.comments.openArticle = a.openArticleWindow
+			}
 		}
 	}
 	return a
@@ -549,6 +556,7 @@ func (a *App) messageFilter() *messageFilter {
 func (a *App) Close() {
 	a.closeMiniApps()
 	a.photoWindows.closeAll()
+	a.articleWindows.closeAll()
 	if a.avatars != nil {
 		a.avatars.media.Close()
 	}
@@ -1219,6 +1227,7 @@ func (a *App) SetMinimized(minimized bool) {
 		a.windowLocked.Store(true)
 		a.window.SetTitle(a.catalog().T("app.title"))
 		a.photoWindows.closeAll()
+		a.articleWindows.closeAll()
 	}
 }
 
@@ -1262,6 +1271,7 @@ func (a *App) checkWindowLock(gtx layout.Context) bool {
 			a.windowLocked.Store(true)
 			a.window.SetTitle(a.catalog().T("app.title"))
 			a.photoWindows.closeAll()
+			a.articleWindows.closeAll()
 			return true
 		}
 		gtx.Execute(op.InvalidateCmd{At: deadline})

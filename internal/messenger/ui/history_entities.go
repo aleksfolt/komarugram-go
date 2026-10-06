@@ -259,6 +259,10 @@ func (p *chatPage) activateRun(gtx layout.Context, r *messageRow, run model.Text
 		}
 		return
 	}
+	if name, ok := anchorTarget(run.URL); ok && r.article != nil {
+		p.goToAnchor(r, name, localization.For(string(r.language)))
+		return
+	}
 	raw := strings.TrimSpace(run.URL)
 	switch scheme, rest, _ := strings.Cut(raw, ":"); strings.ToLower(scheme) {
 	case "tel":

@@ -122,8 +122,8 @@ func (articleStore) Media(_ context.Context, m model.Message) ([]byte, error) {
 }
 
 // TestRenderArticle draws rich messages as articles in their bubbles: the
-// demo's, and one with every kind of block, narrow and wide, in both
-// themes: ARTICLE_PNG_DIR=/tmp/article.
+// demo's, whole and as the part Telegram sends, and one with every kind of
+// block, narrow and wide, in both themes: ARTICLE_PNG_DIR=/tmp/article.
 func TestRenderArticle(t *testing.T) {
 	dir := os.Getenv("ARTICLE_PNG_DIR")
 	if dir == "" {
@@ -132,13 +132,15 @@ func TestRenderArticle(t *testing.T) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	pages := map[string]model.RichPage{"demo": mockstore.RichExample(false), "all": articleFixture()}
+	pages := map[string]model.RichPage{"demo": mockstore.RichExample(false), "part": mockstore.RichExample(true), "all": articleFixture()}
 	for name, page := range pages {
 		for _, dark := range []bool{false, true} {
 			for _, width := range []int{360, 640} {
 				p := newChatPage(articleStore{}, func() {})
 				p.images = &imageOps{}
 				p.rows = map[model.MessageID]*messageRow{}
+				// A part has its button only where the whole can be shown.
+				p.openArticle = func(model.Message, string) {}
 				summary := page.Summary()
 				m := model.Message{Key: model.MessageKey{MessageID: 1}, Text: summary.Text, Entities: summary.Entities, Rich: &page, Date: time.Date(2026, 10, 6, 12, 30, 0, 0, time.UTC), ContentRevision: 1}
 				height := 1400
