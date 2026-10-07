@@ -138,6 +138,8 @@ func (p *chatPage) richText(gtx layout.Context, r *messageRow, l localization.Ca
 		size.Y += dims.Size.Y
 	}
 	call := macro.Stop()
+	typing, lines, height := p.typingStep(gtx, r, size, animate)
+	size.Y = height
 	r.text.size = size
 	area := clip.Rect{Max: size}.Push(gtx.Ops)
 	pointer.CursorText.Add(gtx.Ops)
@@ -146,7 +148,7 @@ func (p *chatPage) richText(gtx layout.Context, r *messageRow, l localization.Ca
 	area.Pop()
 	// Controls are registered after the text area, so their presses cannot
 	// start a text selection or activate a link underneath a button.
-	call.Add(gtx.Ops)
+	p.typed(gtx, r, typing, lines, call, size)
 	return layout.Dimensions{Size: size}
 }
 

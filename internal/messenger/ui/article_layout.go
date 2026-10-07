@@ -26,6 +26,11 @@ type articleState struct {
 	// block id; toggles, their headers.
 	toggled map[int]bool
 	toggles map[int]*surface
+	// opening are the heights of details' bodies as they open and close,
+	// by block id; instant, the details an anchor opened, which open at
+	// once, so that the anchor is where the next frame finds it.
+	opening map[int]*heightTransition
+	instant map[int]bool
 	// slides are the items slideshows show; arrows, their buttons.
 	slides map[int]int
 	arrows map[int]*[2]surface
@@ -60,6 +65,10 @@ func (s *articleState) openTo(doc *articleDoc, name string) bool {
 			s.toggled = map[int]bool{}
 		}
 		s.toggled[b.id] = !b.open
+		if s.instant == nil {
+			s.instant = map[int]bool{}
+		}
+		s.instant[b.id] = true
 	}
 	return true
 }
@@ -140,13 +149,15 @@ func (p *chatPage) articleLayout(gtx layout.Context, r *messageRow, m model.Mess
 	if !doc.wide {
 		size.X = min(a.textWidth, size.X)
 	}
+	typing, lines, height := p.typingStep(gtx, r, size, animate)
+	size.Y = height
 	r.text.size = size
 	area := clip.Rect{Max: size}.Push(gtx.Ops)
 	pointer.CursorText.Add(gtx.Ops)
 	r.text.clicker.Add(gtx.Ops)
 	r.text.dragger.Add(gtx.Ops)
 	area.Pop()
-	call.Add(gtx.Ops)
+	p.typed(gtx, r, typing, lines, call, size)
 	return layout.Dimensions{Size: size}
 }
 

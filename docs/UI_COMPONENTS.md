@@ -132,8 +132,15 @@ cut short has "Show more" under it (`showMore`), which opens
 `articleWindow` (`article_window.go`): a window of its own whose
 `chatPage` draws the article as the history does, with its own photo
 viewer, dialogs and toasts; `newArticleView` is the same without the
-window, for tests; once it went to an anchor, its bar steps back and
-ahead (`articleWindow.step`). Until a rich message's row is laid out, the
+window, for tests. Its bar steps back and ahead once it went to an anchor
+(`articleWindow.step`), and holds the search, sharing and zoom
+(`article_window_tools.go`): the match gone to is the text's selection,
+the others are tinted over the text (under it, the plates of code and
+tables would hide them); the zoom scales the window's `Metric`, the same
+in every window and kept in the settings. What the bar holds is laid out
+with `Constraints.Min` zeroed, and an icon button's content is given its
+exact size, since `surface.Layout` passes its caller's constraints on.
+Until a rich message's row is laid out, the
 history guesses its height from its article (`article_height.go`, sharing
 the media's sizes with the layout). A row learns where its article is in
 the view (`messageRow.viewTop`, from `chatPage.rowTop`), and media far
@@ -144,11 +151,34 @@ to the text under it. `ARTICLE_PNG_DIR=/tmp/article go test
 article`) draws every kind of block, and a part with its button, narrow
 and wide, in both themes.
 
+Formulas (`formulas.go`) are laid out by `internal/messenger/formula`:
+RaTeX (`pkg/ratex`) in a sandbox on a goroutine of its own, as code is
+colored. `chatPage.formula` asks for one and redraws when it comes; until
+then, and when RaTeX cannot read it or it is too large to draw, its
+source shows in the code's font. An inline formula is one `styledtext`
+box (`SpanStyle.Box`), its baseline on the line's, scaled down to fit
+the line, to half its size at most; a block's is centred, 1.21 times the
+text, and scrolls sideways as a wide table does. Either is one cluster
+of all its source (`formulaFragment`), so it selects and copies as its
+source. `ratex.List.Draw` fills KaTeX's glyphs from their outlines, and
+draws what those fonts lack, Cyrillic in `\text`, with the client's text
+font (`formulaGlyph`); a formula without a colour of its own takes the
+text's. The article's render test draws them once they are laid out
+(`waitFormulas`).
+
 The drafts bots stream are messages with `Streaming` set at the end of
 the history (`streamed_drafts.go`): a ring (`chatPage.writing`) turns in
 their footer, their buttons do nothing, they have no menu and no place
 in a selection, and while one may be stopped the composer's Stop
-(`messageComposer.stopDraft`) takes the place of Send.
+(`messageComposer.stopDraft`) takes the place of Send. Their text types
+itself in (`typing.go`): `typingStep` moves a caret along the lines of the
+text's fragments and gives the height to show, down to the caret's line;
+`typed` replays the recorded text area clipped to what the caret passed,
+the caret's line under an edge drawn in strips of falling opacity. The
+message a draft becomes takes its caret over in `rebuild`
+(`handOverTyping`). Details in an article unfold through a
+`heightTransition` of their body (`articleState.opening`), its blocks
+faded and the arrow turned with it.
 
 Hashtags, commands, email, phone and card numbers and formatted dates
 act on a click (`history_entities.go`, `chatPage.activateRun`). A phone

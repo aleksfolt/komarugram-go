@@ -151,6 +151,52 @@ func TestArticleDetailsToggle(t *testing.T) {
 	}
 }
 
+// Details unfold: their height grows from the header's to the whole over
+// a few frames, and back when they close; opened for an anchor, they open
+// at once.
+func TestArticleDetailsUnfold(t *testing.T) {
+	page := model.RichPage{Blocks: []model.RichBlock{
+		{Kind: model.RichDetails, Text: richText("Подробнее"), Blocks: []model.RichBlock{
+			{Kind: model.RichParagraph, Text: richText("скрытое")},
+			{Kind: model.RichParagraph, Text: richText("ещё строка")},
+			{Kind: model.RichParagraph, Text: richText("и ещё одна")},
+		}},
+	}}
+	h := newEntityHarness(t, richMessage(page), model.KindUser)
+	h.animate = true
+	h.frame()
+	closed := h.row.text.size.Y
+	h.clickText("Подробнее")
+	h.frame()
+	opening := h.row.text.size.Y
+	for range 40 {
+		h.frame()
+	}
+	full := h.row.text.size.Y
+	if !(closed < opening && opening < full) {
+		t.Fatalf("closed %d, opening %d, open %d", closed, opening, full)
+	}
+	h.clickText("Подробнее")
+	h.frame()
+	if closing := h.row.text.size.Y; closing <= closed || closing >= full {
+		t.Fatalf("closing %d, between %d and %d", closing, closed, full)
+	}
+	for range 40 {
+		h.frame()
+	}
+	if h.row.text.size.Y != closed {
+		t.Fatalf("closed again at %d, not %d", h.row.text.size.Y, closed)
+	}
+	for _, b := range h.row.article.blocks {
+		h.row.articleState.toggled[b.id] = true
+		h.row.articleState.instant = map[int]bool{b.id: true}
+	}
+	h.frame()
+	if h.row.text.size.Y != full {
+		t.Fatalf("opened for an anchor at %d, not %d", h.row.text.size.Y, full)
+	}
+}
+
 // A link button and a button in the text ask to open their link; a code
 // block of an article copies its text.
 func TestArticleButtonsAndCode(t *testing.T) {

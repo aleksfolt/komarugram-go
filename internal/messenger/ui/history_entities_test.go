@@ -87,6 +87,8 @@ type entityHarness struct {
 	m      model.Message
 	now    time.Time
 	l      localization.Catalog
+	// animate lays the row out as the history does when it animates.
+	animate bool
 }
 
 func newEntityHarness(t *testing.T, m model.Message, kind model.ChatKind) *entityHarness {
@@ -108,9 +110,9 @@ func (h *entityHarness) frame() {
 	h.page.chatSearchUpdate(gtx)
 	h.row.refreshDates(gtx, h.m, h.l)
 	if h.row.article != nil {
-		h.page.articleLayout(gtx, h.row, h.m, h.l, false)
+		h.page.articleLayout(gtx, h.row, h.m, h.l, h.animate)
 	} else {
-		h.page.richText(gtx, h.row, h.l, false)
+		h.page.richText(gtx, h.row, h.l, h.animate)
 	}
 	h.page.entityMenuLayout(gtx, h.l)
 	h.router.Frame(gtx.Ops)

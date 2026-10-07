@@ -192,7 +192,10 @@ type chatPage struct {
 	textRunes map[model.MessageID]textRunes
 	// articleHeights are the guesses of how high rich messages' rows
 	// are, until they are laid out.
-	articleHeights                             map[model.MessageID]articleGuess
+	articleHeights map[model.MessageID]articleGuess
+	// typing are the carets of drafts bots stream and of the messages
+	// they became, as their text types itself in (typing.go).
+	typing                                     map[model.MessageID]*typing
 	env                                        model.RenderEnvironment
 	heights                                    *model.HeightIndex
 	measures                                   map[model.MessageID]model.MessageLayout
@@ -834,6 +837,7 @@ func (p *chatPage) rebuild(messages []model.Message, env model.RenderEnvironment
 		p.dirty = map[model.MessageID]model.MessageLayout{}
 	}
 	p.env = env
+	p.handOverTyping(messages)
 	p.messages = messages
 	p.dates = make([]string, len(messages))
 	p.dayStart = make([]bool, len(messages))

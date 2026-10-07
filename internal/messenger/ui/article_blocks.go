@@ -5,10 +5,12 @@ package ui
 import (
 	"image"
 	"image/color"
+	"math"
 
 	"gio-mw/token"
 	"gio-mw/wdk"
 
+	"gioui.org/f32"
 	"gioui.org/gesture"
 	"gioui.org/io/pointer"
 	"gioui.org/layout"
@@ -356,7 +358,9 @@ func (a *articleDraw) columnWidths(gtx layout.Context, b *articleBlock, places [
 }
 
 // details draws details: a header with their summary, which opens and
-// closes them, over their blocks when they are open.
+// closes them, over their blocks when they are open. As in Telegram for
+// Android, the blocks unfold: their height grows from the header's, they
+// fade in as it does, and the arrow turns; closing, the same backwards.
 func (a *articleDraw) details(gtx layout.Context, b *articleBlock, origin image.Point) int {
 	sc := scheme(gtx)
 	s := &a.r.articleState
@@ -369,6 +373,16 @@ func (a *articleDraw) details(gtx layout.Context, b *articleBlock, origin image.
 		gtx.Execute(op.InvalidateCmd{})
 	}
 	open := b.open != s.toggled[b.id]
+	if s.opening == nil {
+		s.opening = map[int]*heightTransition{}
+	}
+	unfold := s.opening[b.id]
+	if unfold == nil {
+		unfold = &heightTransition{}
+		s.opening[b.id] = unfold
+	}
+	animate := a.animate && !s.instant[b.id]
+	delete(s.instant, b.id)
 	width := gtx.Constraints.Max.X
 	pad := image.Pt(gtx.Dp(10), gtx.Dp(8))
 	icon := gtx.Dp(24)
@@ -377,26 +391,60 @@ func (a *articleDraw) details(gtx layout.Context, b *articleBlock, origin image.
 	macro := op.Record(gtx.Ops)
 	title := offset(inner, pad, func(gtx layout.Context) layout.Dimensions { return a.flow(gtx, b.title, origin.Add(pad)) })
 	header := max(title.Size.Y, icon) + 2*pad.Y
-	offset(gtx, image.Pt(width-pad.X-icon, (header-icon)/2), func(gtx layout.Context) layout.Dimensions {
-		glyph := iconExpandMore
-		if open {
-			glyph = iconExpandLess
+	// The body is laid out while it shows, closing too, and clipped to
+	// the height it has come to.
+	shown := unfold.value
+	if !unfold.initialized || unfold.width != width {
+		shown = 0
+	}
+	var body op.CallOp
+	full := 0
+	if open || shown > 0 {
+		pos := image.Pt(pad.X, header)
+		inner := gtx
+		inner.Constraints.Max.X = max(1, width-2*pad.X)
+		bodyMacro := op.Record(gtx.Ops)
+		full = offset(inner, pos, func(gtx layout.Context) layout.Dimensions {
+			return layout.Dimensions{Size: a.stack(gtx, b.children, origin.Add(pos))}
+		}).Size.Y + pad.Y
+		body = bodyMacro.Stop()
+	}
+	target := 0
+	if open {
+		target = full
+	}
+	shown = min(unfold.Value(gtx, target, animate), full)
+	if shown > 0 {
+		area := clip.Rect{Max: image.Pt(width, header+shown)}.Push(gtx.Ops)
+		if shown < full {
+			fade := paint.PushOpacity(gtx.Ops, float32(shown)/float32(full))
+			body.Add(gtx.Ops)
+			fade.Pop()
+		} else {
+			body.Add(gtx.Ops)
 		}
-		return exact(gtx, image.Pt(icon, icon), func(gtx layout.Context) layout.Dimensions { return glyph(gtx, sc.SurfaceVariant.OnColor) })
+		area.Pop()
+	}
+	// The arrow turns from down to up as the body opens.
+	turn := float32(0)
+	if full > 0 {
+		turn = float32(shown) / float32(full)
+	} else if open {
+		turn = 1
+	}
+	offset(gtx, image.Pt(width-pad.X-icon, (header-icon)/2), func(gtx layout.Context) layout.Dimensions {
+		center := f32.Pt(float32(icon)/2, float32(icon)/2)
+		defer op.Affine(f32.AffineId().Rotate(center, turn*math.Pi)).Push(gtx.Ops).Pop()
+		return exact(gtx, image.Pt(icon, icon), func(gtx layout.Context) layout.Dimensions { return iconExpandMore(gtx, sc.SurfaceVariant.OnColor) })
 	})
 	// The header takes the click over its text.
 	toggle.Layout(gtx, image.Pt(width, header), surfaceStyle{radius: gtx.Dp(8), background: sc.Surface.OnColor.SetOpacity(0), content: sc.Surface.OnColor, button: a.l.T("text.expand_quote")}, func(gtx layout.Context) layout.Dimensions {
 		return layout.Dimensions{Size: image.Pt(width, header)}
 	})
-	h := header
-	if open {
-		pos := image.Pt(pad.X, header)
-		body := gtx
-		body.Constraints.Max.X = max(1, width-2*pad.X)
-		h += offset(body, pos, func(gtx layout.Context) layout.Dimensions {
-			return layout.Dimensions{Size: a.stack(gtx, b.children, origin.Add(pos))}
-		}).Size.Y + pad.Y
+	if shown < full {
+		gtx.Execute(op.InvalidateCmd{})
 	}
+	h := header + shown
 	call := macro.Stop()
 	size := image.Pt(width, h)
 	radius := gtx.Dp(8)
