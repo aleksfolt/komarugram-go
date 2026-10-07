@@ -111,6 +111,9 @@ modules are not in this repository, and the client fetches them
 - **The README files in the root (`README.md`, `README_RU.md`) change only
   with the maintainer's consent.** Propose the text instead; when a change
   is agreed, make it in both languages.
+- **Third-party licenses are in `docs/THIRD_PARTY_LICENSES.md`**, not in
+  the READMEs: a dependency, embedded file or downloaded module gets its
+  row there when it comes in.
 - **Dependencies are the maintainer's choice.** Do not add a Go module, a
   library or a tool the build or the app needs on your own. Propose the
   options with their trade-offs — for a decoder of media from strangers,
