@@ -148,3 +148,82 @@ func TestArticleWindowStepsBackAndAhead(t *testing.T) {
 		t.Fatalf("ahead, the window is at %d, not %d", got, there)
 	}
 }
+
+// Ctrl with = and 0 zoom the window's article in by 10 % and back, kept
+// where the window keeps it.
+func TestArticleWindowZoom(t *testing.T) {
+	page := anchorPage(false)
+	h := newArticleViewHarness(t, page, page, "")
+	zoom := 0
+	h.view.tools.zoom = func() int { return zoom }
+	h.view.tools.setZoom = func(z int) { zoom = z }
+	h.frame()
+	r := h.view.page.rows[h.view.message.Key.MessageID]
+	before := r.text.size
+	h.router.Queue(key.Event{Name: "=", Modifiers: key.ModShortcut, State: key.Press})
+	h.frame()
+	h.frame()
+	// The window's width is the same: the article's text is bigger, and
+	// longer.
+	if zoom != 110 || r.text.size.Y <= before.Y*21/20 {
+		t.Fatalf("zoomed to %d, the article is %v, was %v", zoom, r.text.size, before)
+	}
+	h.router.Queue(key.Event{Name: "0", Modifiers: key.ModShortcut, State: key.Press})
+	h.frame()
+	if zoom != 100 {
+		t.Fatalf("Ctrl+0 zoomed to %d", zoom)
+	}
+}
+
+// Ctrl+F searches the article: the matches of any case are counted, the
+// first selected, and Enter goes to the next.
+func TestArticleWindowSearch(t *testing.T) {
+	page := anchorPage(false)
+	h := newArticleViewHarness(t, page, page, "")
+	h.router.Queue(key.Event{Name: "F", Modifiers: key.ModShortcut, State: key.Press})
+	h.frame()
+	s := &h.view.tools.search
+	if !s.open {
+		t.Fatal("Ctrl+F does not open the search")
+	}
+	s.field.SetText("абзац 1")
+	h.frame()
+	// "Абзац 1" and "Абзац 10" to "Абзац 19", and "Ещё абзац 1" and its tens.
+	if len(s.matches) != 22 || s.current != 0 {
+		t.Fatalf("%d matches, at %d", len(s.matches), s.current)
+	}
+	r := h.view.page.rows[h.view.message.Key.MessageID]
+	if got := r.selectedText(); got != "Абзац 1" {
+		t.Fatalf("selected %q", got)
+	}
+	h.router.Queue(key.Event{Name: key.NameReturn, State: key.Press})
+	h.frame()
+	if s.current != 1 || h.view.list.Position.Offset == 0 {
+		t.Fatalf("Enter went to %d, the window at %d", s.current, h.view.list.Position.Offset)
+	}
+}
+
+// Share forwards the message, from the window's own dialog.
+func TestArticleWindowShare(t *testing.T) {
+	page := anchorPage(false)
+	h := newArticleViewHarness(t, page, page, "")
+	h.view.page.source = forwardingStore{h.store}
+	h.view.page.chats = func() []model.Chat { return []model.Chat{{ID: 5, Title: "Друг"}} }
+	h.frame()
+	// Share is second from the right of the bar, after the search.
+	for _, kind := range []pointer.Kind{pointer.Press, pointer.Release} {
+		h.router.Queue(pointer.Event{Kind: kind, Source: pointer.Mouse, Position: f32.Pt(500-4-44-22, 24), Buttons: pointer.ButtonPrimary})
+		h.frame()
+	}
+	h.frame()
+	if !h.view.page.forwarding.modal.Shown() || len(h.view.page.forwarding.ids) != 1 {
+		t.Fatal("Share opens no forward dialog")
+	}
+}
+
+// forwardingStore can forward messages, and forwards none.
+type forwardingStore struct{ wholeArticleStore }
+
+func (forwardingStore) ForwardMessages(context.Context, int64, []model.MessageID, int64) error {
+	return nil
+}

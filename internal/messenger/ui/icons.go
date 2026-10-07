@@ -34,6 +34,7 @@ var (
 	iconDark          = wdk.RequireIconWidget(icons.ImageBrightness2)
 	iconLight         = wdk.RequireIconWidget(icons.ImageWBSunny)
 	iconBack          = wdk.RequireIconWidget(icons.NavigationArrowBack)
+	iconAhead         = wdk.RequireIconWidget(icons.NavigationArrowForward)
 	iconMenu          = wdk.RequireIconWidget(icons.NavigationMenu)
 	iconClear         = wdk.RequireIconWidget(icons.ContentClear)
 	iconChevron       = wdk.RequireIconWidget(icons.NavigationChevronRight)

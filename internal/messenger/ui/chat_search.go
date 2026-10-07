@@ -320,6 +320,11 @@ func (s *chatSearch) layoutField(gtx layout.Context, l localization.Catalog) lay
 // layoutSearchField draws field as a pill with the search icon, across
 // the middle of gtx, as a search over a chat's header has it.
 func layoutSearchField(gtx layout.Context, field *widget.Editor, l localization.Catalog) layout.Dimensions {
+	return layoutSearchFieldHint(gtx, field, l.T("chat_search.hint"))
+}
+
+// layoutSearchFieldHint is layoutSearchField with hint in the empty field.
+func layoutSearchFieldHint(gtx layout.Context, field *widget.Editor, hint string) layout.Dimensions {
 	sc := scheme(gtx)
 	theme := wdk.GetMaterialTheme(gtx)
 	size := gtx.Constraints.Max
@@ -343,7 +348,7 @@ func layoutSearchField(gtx layout.Context, field *widget.Editor, l localization.
 	fieldGtx.Constraints = layout.Exact(image.Pt(max(size.X-textX-gtx.Dp(12), 0), line))
 	offset(fieldGtx, image.Pt(textX, (size.Y-line)/2), func(gtx layout.Context) layout.Dimensions {
 		if field.Len() == 0 {
-			label(gtx, l.T("chat_search.hint"), token.TypestyleBodyLarge, sc.SurfaceVariant.OnColor, 1)
+			label(gtx, hint, token.TypestyleBodyLarge, sc.SurfaceVariant.OnColor, 1)
 		}
 		color := op.Record(gtx.Ops)
 		paint.ColorOp{Color: sc.Surface.OnColor.AsNRGBA()}.Add(gtx.Ops)

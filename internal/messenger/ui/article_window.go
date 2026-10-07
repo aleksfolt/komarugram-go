@@ -5,6 +5,7 @@ package ui
 import (
 	"context"
 	"image"
+	"log"
 	"sync"
 
 	"gio-mw/defaults"
@@ -17,6 +18,7 @@ import (
 	"gioui.org/io/key"
 	"gioui.org/io/system"
 	"gioui.org/layout"
+	"gioui.org/op/clip"
 	"gioui.org/unit"
 
 	"komarugram/internal/appwindow"
@@ -55,6 +57,7 @@ type articleWindow struct {
 	// steps through its history; backButton and aheadButton step.
 	back, ahead             []int
 	backButton, aheadButton surface
+	tools                   articleTools
 	loaded                  chan articleLoad
 	cancel                  context.CancelFunc
 	theme                   *token.Theme
@@ -76,9 +79,21 @@ const (
 	articleWindowMargin = 20
 )
 
-func newArticleWindow(w *appwindow.Window, source model.ConversationStore, catalog localization.Catalog, mode func() themeMode, m model.Message, fragment string) *articleWindow {
+// articleWindowHost is what the account window gives an article window:
+// the theme's mode, the zoom kept in the settings, and the chats to share
+// to.
+type articleWindowHost struct {
+	mode    func() themeMode
+	zoom    func() int
+	setZoom func(int)
+	chats   func() []model.Chat
+}
+
+func newArticleWindow(w *appwindow.Window, source model.ConversationStore, catalog localization.Catalog, host articleWindowHost, m model.Message, fragment string) *articleWindow {
 	a := newArticleView(source, catalog, m, fragment, w.Invalidate)
-	a.w, a.mode = w, mode
+	a.w, a.mode = w, host.mode
+	a.tools.zoom, a.tools.setZoom = host.zoom, host.setZoom
+	a.page.chats = host.chats
 	return a
 }
 
@@ -154,6 +169,7 @@ func (a *articleWindow) layout(gtx layout.Context, animate bool) {
 	p.animate = animate
 	p.entityMenu.watch(gtx)
 	a.steps(gtx)
+	a.toolEvents(gtx)
 	select {
 	case name := <-a.goTo:
 		a.fragment = name
@@ -184,7 +200,14 @@ func (a *articleWindow) layout(gtx layout.Context, animate bool) {
 	fillRect(gtx, scheme(gtx).Surface.Color, size)
 	body := gtx
 	body.Constraints = layout.Exact(image.Pt(size.X, max(size.Y-bar, 0)))
+	// The zoom scales what the article draws, as if its window's density
+	// were higher.
+	zoom := float32(a.zoomPercent()) / 100
+	body.Metric.PxPerDp *= zoom
+	body.Metric.PxPerSp *= zoom
 	offset(body, image.Pt(0, bar), func(gtx layout.Context) layout.Dimensions {
+		// What scrolled out of the view must not reach over the bar.
+		defer clip.Rect{Max: gtx.Constraints.Max}.Push(gtx.Ops).Pop()
 		return a.list.Layout(gtx, 1, func(gtx layout.Context, _ int) layout.Dimensions {
 			return layout.UniformInset(articleWindowMargin).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				return layout.N.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
@@ -229,7 +252,11 @@ func (a *articleWindow) article(gtx layout.Context, l localization.Catalog, anim
 	// The article is the window's one item, under its margin.
 	r.viewTop, r.viewKnown = gtx.Dp(articleWindowMargin)-a.list.Position.Offset, true
 	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
-		layout.Rigid(func(gtx layout.Context) layout.Dimensions { return p.articleLayout(gtx, r, m, l, animate) }),
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			dims := p.articleLayout(gtx, r, m, l, animate)
+			a.layoutMatches(gtx, r)
+			return dims
+		}),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			if a.whole {
 				return layout.Dimensions{}
@@ -336,13 +363,8 @@ func (a *articleWindow) steps(gtx layout.Context) {
 	}
 }
 
-// stepsBar is how high the bar of the steps back and ahead is: none
-// until the window went to an anchor, and then always, so that the
-// article does not move under it again.
+// stepsBar is how high the window's bar over the article is.
 func (a *articleWindow) stepsBar(gtx layout.Context) int {
-	if len(a.back)+len(a.ahead) == 0 {
-		return 0
-	}
 	return gtx.Dp(48)
 }
 
@@ -366,7 +388,7 @@ func (a *articleWindow) layoutSteps(gtx layout.Context, l localization.Catalog) 
 		button  *surface
 		icon    wdk.IconWidget
 		label   string
-	}{{len(a.back) > 0, &a.backButton, iconBack, l.T("rich.back")}, {len(a.ahead) > 0, &a.aheadButton, iconForward, l.T("rich.forward")}} {
+	}{{len(a.back) > 0, &a.backButton, iconBack, l.T("rich.back")}, {len(a.ahead) > 0, &a.aheadButton, iconAhead, l.T("rich.forward")}} {
 		offset(gtx, image.Pt(x, 0), func(gtx layout.Context) layout.Dimensions {
 			if !s.enabled {
 				gtx = gtx.Disabled()
@@ -387,6 +409,7 @@ func (a *articleWindow) layoutSteps(gtx layout.Context, l localization.Catalog) 
 		})
 		x += gtx.Dp(48)
 	}
+	a.layoutTools(gtx, bar, x+gtx.Dp(8), l)
 }
 
 func (a *articleWindow) Locale() system.Locale {
@@ -483,7 +506,17 @@ func (a *App) openArticleWindow(m model.Message, fragment string) {
 	a.openWindow(appwindow.Spec{
 		Options: appwindow.Options{Title: title, Width: unit.Dp(articleWindowWidth + 2*articleWindowMargin + 40), Height: unit.Dp(860), Locale: a.Locale()},
 		Build: func(w *appwindow.Window) appwindow.Content {
-			window := newArticleWindow(w, source, catalog, a.themeMode, m, fragment)
+			host := articleWindowHost{
+				mode:  a.themeMode,
+				zoom:  func() int { return a.preferences.Global().ArticleZoom },
+				chats: a.store.Chats,
+				setZoom: func(z int) {
+					if err := a.preferences.SetArticleZoom(z); err != nil {
+						log.Printf("save settings: %v", err)
+					}
+				},
+			}
+			window := newArticleWindow(w, source, catalog, host, m, fragment)
 			a.articleWindows.add(m.Key, window)
 			return window
 		},

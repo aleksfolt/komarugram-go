@@ -18,6 +18,8 @@ func init() {
 	TelegramKeys["rich.anchor_missing"] = "lng_iv_not_found_in_message"
 	TelegramKeys["rich.show_more"] = "lng_view_button_full_article"
 	TelegramKeys["rich.stop_draft"] = "lng_stop_button"
+	TelegramKeys["rich.search"] = "lng_dlg_filter"
+	TelegramKeys["rich.share"] = "lng_iv_share"
 	for key, texts := range map[string][2]string{
 		"text.copy_code": {"Копировать", "Copy"},
 		"text.copied":    {"Текст скопирован", "Text copied"},
@@ -46,6 +48,11 @@ func init() {
 		// The article window's steps through the anchors it went to.
 		"rich.back":    {"Назад", "Back"},
 		"rich.forward": {"Вперёд", "Forward"},
+		// Its search, sharing and zoom.
+		"rich.search":   {"Поиск", "Search"},
+		"rich.share":    {"Поделиться", "Share"},
+		"rich.zoom_in":  {"Увеличить", "Zoom in"},
+		"rich.zoom_out": {"Уменьшить", "Zoom out"},
 	} {
 		russian[key], english[key] = texts[0], texts[1]
 	}
