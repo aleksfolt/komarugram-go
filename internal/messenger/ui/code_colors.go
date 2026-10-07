@@ -17,8 +17,11 @@ import (
 // the light theme and the dark one. Telegram Desktop takes them from its
 // chart palette; these follow Telegram for Android's groups (keyword,
 // operator, constant, string, comment), toned for the code block's plate.
+// Plain is the color of code with no class, and of inline code, as
+// Telegram Desktop's monoFg (#4e7391 in its light theme).
 var codePalettes = [2][codehighlight.Inserted + 1]color.NRGBA{
 	{
+		codehighlight.Plain:       {R: 0x4e, G: 0x73, B: 0x91, A: 0xff},
 		codehighlight.Comment:     {R: 0x7d, G: 0x83, B: 0x8c, A: 0xff},
 		codehighlight.Punctuation: {R: 0x5b, G: 0x64, B: 0x70, A: 0xff},
 		codehighlight.Constant:    {R: 0xc8, G: 0x36, B: 0x36, A: 0xff},
@@ -29,6 +32,7 @@ var codePalettes = [2][codehighlight.Inserted + 1]color.NRGBA{
 		codehighlight.Inserted:    {R: 0x1f, G: 0x80, B: 0x3a, A: 0xff},
 	},
 	{
+		codehighlight.Plain:       {R: 0x8f, G: 0xb8, B: 0xd8, A: 0xff},
 		codehighlight.Comment:     {R: 0x8b, G: 0x94, B: 0x9e, A: 0xff},
 		codehighlight.Punctuation: {R: 0xb1, G: 0xba, B: 0xc4, A: 0xff},
 		codehighlight.Constant:    {R: 0xff, G: 0x7b, B: 0x72, A: 0xff},

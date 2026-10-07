@@ -216,3 +216,27 @@ func Pending() int {
 	defer l.mu.Unlock()
 	return len(l.pending)
 }
+
+// Wait lays source out as Request does, and returns it once it is, or
+// ctx's error when ctx ends first: for what needs a formula drawn now, as
+// saving a message as HTML does.
+func Wait(ctx context.Context, source string, display bool) (Result, error) {
+	key := KeyOf(source, display)
+	if r, ok := Lookup(key); ok {
+		return r, nil
+	}
+	done := make(chan struct{})
+	var once sync.Once
+	Request(key, source, display, func() { once.Do(func() { close(done) }) })
+	select {
+	case <-done:
+	case <-ctx.Done():
+		return Result{}, ctx.Err()
+	}
+	r, ok := Lookup(key)
+	if !ok {
+		// Laid out, and let go from the cache since: lay it out again.
+		return Wait(ctx, source, display)
+	}
+	return r, nil
+}

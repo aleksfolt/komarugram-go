@@ -50,6 +50,7 @@ const (
 	actionFilter
 	actionTranslate
 	actionRepeat
+	actionSaveHTML
 	menuActions
 )
 
@@ -154,19 +155,28 @@ func menuText(m model.Message) string {
 
 // menuSelectedText is the text selected in m, when some is.
 func (p *chatPage) menuSelectedText(m model.Message) string {
+	if r := p.menuSelectedRow(m); r != nil {
+		return r.selectedText()
+	}
+	return ""
+}
+
+// menuSelectedRow is the row of m, or of a part of it, text is selected
+// in, nil for none.
+func (p *chatPage) menuSelectedRow(m model.Message) *messageRow {
 	r := p.rows[m.Key.MessageID]
 	if r == nil || p.activeText == nil {
-		return ""
+		return nil
 	}
 	if p.activeText == r {
-		return r.selectedText()
+		return r
 	}
 	for _, child := range r.album {
 		if p.activeText == child {
-			return child.selectedText()
+			return child
 		}
 	}
-	return ""
+	return nil
 }
 
 // canReply reports whether what is sent to the open chat may reply to m.
@@ -228,6 +238,11 @@ func (p *chatPage) menuActions(m model.Message) []menuAction {
 	}
 	if !selected && p.canRepeat(m) {
 		out = append(out, actionRepeat)
+	}
+	// Telegram Desktop offers it for the only message selected; it is
+	// offered for a message alone too.
+	if canSaveHTML(m) && (!selected || len(p.selection.selected) == 1) {
+		out = append(out, actionSaveHTML)
 	}
 	if p.messageMenu.packs.id == m.Key.MessageID && len(p.messageMenu.packs.found.refs) > 0 {
 		out = append(out, actionEmojiPacks)
@@ -292,7 +307,9 @@ func (p *chatPage) menuDo(gtx layout.Context, a menuAction, m model.Message, l l
 	case actionReply:
 		p.composer.replyTo(gtx, p.chat, m)
 	case actionCopySelected:
-		copyText(p.menuSelectedText(m))
+		if r := p.menuSelectedRow(m); r != nil {
+			copySelection(gtx, r)
+		}
 	case actionCopyText:
 		copyText(menuText(m))
 	case actionCopyLink:
@@ -328,6 +345,8 @@ func (p *chatPage) menuDo(gtx layout.Context, a menuAction, m model.Message, l l
 		p.translation.open(p, m, p.menuSelectedText(m), string(l.Language()))
 	case actionRepeat:
 		p.repeat(m)
+	case actionSaveHTML:
+		p.saveHTML(m, l)
 	case actionFilter:
 		// A filter of the words selected, in every chat, as AyuGram's
 		// quick filter.
@@ -385,6 +404,8 @@ func (p *chatPage) menuLabel(a menuAction, l localization.Catalog) string {
 		return l.T("menu.filter")
 	case actionRepeat:
 		return l.T("menu.repeat")
+	case actionSaveHTML:
+		return l.T("rich.save_html")
 	case actionTranslate:
 		if m, ok := p.menuMessage(); ok && p.menuSelectedText(m) != "" {
 			return l.T("menu.translate_selected")
@@ -434,6 +455,8 @@ func menuIcon(a menuAction) wdk.IconWidget {
 		return iconTranslate
 	case actionRepeat:
 		return iconRepeat
+	case actionSaveHTML:
+		return iconDownload
 	}
 	return iconEmoji
 }

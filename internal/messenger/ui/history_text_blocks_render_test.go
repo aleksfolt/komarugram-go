@@ -101,6 +101,8 @@ func TestRenderCodeColors(t *testing.T) {
 		{"python", "@cache\ndef area(r: float) -> float:\n    \"\"\"Area of a circle.\"\"\"\n    return 3.14 * r ** 2  # approx"},
 		{"html", "<!-- note -->\n<a href=\"/x\" class=\"b\">&amp; link</a>"},
 		{"diff", "@@ -1,2 +1,2 @@\n-old line\n+new line\n context"},
+		{"go", "func main() {\n\tif ok {\n\t\tprintln(\"tab\")\n\t}\n}"},
+		{"", "plain\tcolumns\tafter tabs"},
 	}
 	var text strings.Builder
 	var entities []model.Entity
@@ -111,6 +113,10 @@ func TestRenderCodeColors(t *testing.T) {
 		entities = append(entities, model.Entity{Kind: "pre", Offset: start, Length: len(utf16.Encode([]rune(b[1]))), Language: b[0]})
 		text.WriteString("\n")
 	}
+	// Inline code, in Latin and Cyrillic letters.
+	start := len(utf16.Encode([]rune(text.String())))
+	text.WriteString("Inline go build and запуск.")
+	entities = append(entities, model.Entity{Kind: "code", Offset: start + 7, Length: 8}, model.Entity{Kind: "code", Offset: start + 20, Length: 6})
 	runs := model.TextRuns(text.String(), entities)
 	waitCodeColors(t, runs)
 	for _, dark := range []bool{false, true} {
@@ -118,7 +124,7 @@ func TestRenderCodeColors(t *testing.T) {
 		p.images = &imageOps{}
 		m := model.Message{Key: model.MessageKey{MessageID: 1}, Text: text.String(), Entities: entities, Date: time.Date(2026, 10, 5, 12, 30, 0, 0, time.UTC), ContentRevision: 1}
 		p.rows = map[model.MessageID]*messageRow{1: {revision: 1, runs: runs}}
-		renderToast(t, filepath.Join(dir, fmt.Sprintf("code-colors-dark-%t.png", dark)), image.Pt(640, 900), dark, func(gtx layout.Context) {
+		renderToast(t, filepath.Join(dir, fmt.Sprintf("code-colors-dark-%t.png", dark)), image.Pt(640, 1300), dark, func(gtx layout.Context) {
 			p.images.BeginFrame()
 			layout.UniformInset(12).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				gtx.Constraints.Min = image.Point{}

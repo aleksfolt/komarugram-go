@@ -146,8 +146,20 @@ type articleDoc struct {
 	details []*articleBlock
 	// part is set when Telegram sent the article cut short.
 	part bool
+	// tops are the page's blocks, where each is in its text, for copying
+	// what is selected as HTML.
+	tops []articleTop
+	page model.RichPage
 	l    localization.Catalog
 	now  time.Time
+}
+
+// articleTop is a block of the page, not inside another: the runes of the
+// article's text it holds, start to end, and the leaf of its text when it
+// is all a text, which copying a part of cuts; -1 otherwise.
+type articleTop struct {
+	start, end int
+	leaf       int
 }
 
 // Space above a block after another one, in dp, after Telegram Desktop's
@@ -175,9 +187,36 @@ var (
 // prepareArticle prepares page to be drawn, its dates written as l writes
 // them at now.
 func prepareArticle(page model.RichPage, l localization.Catalog, now time.Time) *articleDoc {
-	d := &articleDoc{l: l, now: now, part: page.Part}
-	d.blocks = d.blocksOf(page.Blocks)
+	d := &articleDoc{l: l, now: now, part: page.Part, page: page}
+	for _, b := range page.Blocks {
+		start, leaves := d.runes, len(d.leaves)
+		if a := d.blockOf(b); a != nil {
+			d.blocks = append(d.blocks, a)
+		}
+		top := articleTop{start: start, end: d.runes, leaf: -1}
+		if len(d.leaves) == leaves+1 && cuttable(b) {
+			top.leaf = leaves
+		}
+		d.tops = append(d.tops, top)
+	}
 	return d
+}
+
+// cuttable reports whether b is all a text, the text of a leaf of its own
+// as it is written: a part of it copies as itself.
+func cuttable(b model.RichBlock) bool {
+	switch b.Kind {
+	case model.RichHeading, model.RichParagraph, model.RichFooter, model.RichThinking, model.RichCode:
+	default:
+		return false
+	}
+	for _, e := range b.Text.Entities {
+		if e.Date != 0 {
+			// A date is written as the reader's language writes it.
+			return false
+		}
+	}
+	return true
 }
 
 // mark takes the anchors of names at what is prepared, and returns them.

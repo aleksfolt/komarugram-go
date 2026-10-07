@@ -204,8 +204,12 @@ type chatPage struct {
 	// Instant View is made; sourceDone brings it, and openSourceWindow
 	// shows it (markdown_viewer.go, web_preview.go): the article, its
 	// title, and what it is of.
-	sourceBusy       atomic.Bool
-	sourceDone       chan sourceOpened
+	sourceBusy atomic.Bool
+	sourceDone chan sourceOpened
+	// htmlBusy is set while a message is saved as HTML (rich_html.go),
+	// and htmlDone tells how it went.
+	htmlBusy         atomic.Bool
+	htmlDone         chan htmlSaved
 	openSourceWindow func(article model.Message, title string, src articleSource)
 	// typing are the carets of drafts bots stream and of the messages
 	// they became, as their text types itself in (typing.go).
@@ -443,6 +447,7 @@ func (p *chatPage) save(force bool) {
 // bar, if it has pinned messages, and its history under them.
 func (p *chatPage) Layout(gtx layout.Context, c model.Chat, l localization.Catalog, animate bool) layout.Dimensions {
 	p.sourceEvents(l)
+	p.htmlEvents(l)
 	playing := p.audioBarSize(gtx)
 	bar := playing + p.pinnedHeight(gtx, c.ID)
 	if bar == 0 {
@@ -978,7 +983,13 @@ func (p *chatPage) textFlow(gtx layout.Context, r *messageRow, block *messageTex
 			st.Font.Style = font.Italic
 		}
 		if run.Code {
+			// Code is in its own color too, as Telegram Desktop's monoFg:
+			// in a font of the text, as when the code's font lacks a
+			// letter, it would look like the rest.
 			st.Font.Typeface = theme.Typescale[token.TypestylePreformatted].Font
+			if !run.Math {
+				st.Color = codeColor(gtx, codehighlight.Plain)
+			}
 		}
 		if run.URL != "" || run.Action != "" {
 			st.Color = scheme(gtx).Primary.Color.AsNRGBA()
@@ -1056,6 +1067,7 @@ func (p *chatPage) textFlow(gtx layout.Context, r *messageRow, block *messageTex
 			flowRuns = append(flowRuns, i)
 		}
 	}
+	flowStyles, flowRuns = splitTabs(gtx, theme.TextShaper, flowStyles, flowRuns)
 	text := styledtext.Text(theme.TextShaper, flowStyles...)
 	text.Alignment = block.style.align
 	if runs[0].Pre {

@@ -98,3 +98,40 @@ func TestCodeBlockColorsKeepSelection(t *testing.T) {
 		t.Fatalf("copied %q, %v", copied, ok)
 	}
 }
+
+// A tab in code is as wide as four spaces, where the fonts drew a box of
+// one letter, and still selects and copies as a tab.
+func TestCodeTabsAreFourSpaces(t *testing.T) {
+	text := "x\ty\n    y"
+	runs := model.TextRuns(text, []model.Entity{{Kind: "pre", Offset: 0, Length: utf16Length(text)}})
+	h := &interactionHarness{page: newChatPage(benchmarkHistory{}, func() {}), now: time.Unix(1000, 0), size: image.Pt(320, 300), row: &messageRow{runs: runs}, animate: false}
+	t.Cleanup(h.page.Close)
+	h.frame()
+	// The clusters of "x\ty" and of "    y": the y after the tab is where
+	// the one after four spaces is, give or take the x.
+	var tab, spaced []int
+	for _, f := range h.row.text.fragments {
+		for _, c := range f.Clusters {
+			if c.Start == 2 {
+				tab = append(tab, c.Bounds.Min.X)
+			}
+			if c.Start == 8 {
+				spaced = append(spaced, c.Bounds.Min.X)
+			}
+		}
+	}
+	if len(tab) != 1 || len(spaced) != 1 {
+		t.Fatalf("clusters of y: %v %v", tab, spaced)
+	}
+	if tab[0] < spaced[0] {
+		t.Fatalf("y after the tab at %d, after four spaces at %d", tab[0], spaced[0])
+	}
+	first := h.row.text.fragments[0].Bounds
+	last := h.row.text.fragments[len(h.row.text.fragments)-1].Bounds
+	h.pointer(pointer.Press, f32.Pt(float32(first.Min.X), float32(first.Min.Y+first.Dy()/2)))
+	h.pointer(pointer.Drag, f32.Pt(float32(last.Max.X), float32(last.Min.Y+last.Dy()/2)))
+	h.pointer(pointer.Release, f32.Pt(float32(last.Max.X), float32(last.Min.Y+last.Dy()/2)))
+	if got := h.row.selectedText(); got != text {
+		t.Fatalf("selected %q", got)
+	}
+}

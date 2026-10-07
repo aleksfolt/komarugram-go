@@ -5,7 +5,6 @@ package ui
 import (
 	"image"
 	"image/color"
-	"io"
 	"math"
 	"sort"
 	"strings"
@@ -18,7 +17,6 @@ import (
 	"komarugram/internal/messenger/styledtext"
 
 	"gioui.org/f32"
-	"gioui.org/io/clipboard"
 	"gioui.org/io/event"
 	"gioui.org/io/key"
 	"gioui.org/io/pointer"
@@ -285,9 +283,7 @@ func (p *chatPage) keyboardEvents(gtx layout.Context) {
 		r := p.activeText
 		switch e.Name {
 		case "C", "С":
-			if text := r.selectedText(); text != "" {
-				gtx.Execute(clipboard.WriteCmd{Type: "application/text", Data: io.NopCloser(strings.NewReader(text))})
-			}
+			copySelection(gtx, r)
 		case "A", "Ф":
 			r.text.anchor, r.text.caret = 0, 0
 			for _, run := range r.runs {

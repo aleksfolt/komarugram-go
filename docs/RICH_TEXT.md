@@ -7,9 +7,9 @@ in the bubble, 2026-10-06), the engine in the bubble and the article
 window with its search, zoom and sharing (stage 3, 2026-10-06), the
 drafts bots stream (2026-10-06), formulas by RaTeX (stage 4, 2026-10-06),
 stage 4a (code highlighting, 2026-10-05), the `.md` viewer (stage 5,
-2026-10-07) and Instant View (stage 6, 2026-10-07) are implemented; see
-"Implementation progress" below. Left: saving a rich message as HTML
-(stage 7).
+2026-10-07), Instant View (stage 6, 2026-10-07) and saving as HTML with
+copying as HTML (stage 7, 2026-10-07) are implemented: the plan is done;
+see "Implementation progress" below.
 The research notes gather what Telegram sends, how Telegram Desktop shows
 it, what KomaruGram has, and a
 measured comparison of the libraries the work needs: a Markdown parser
@@ -1039,7 +1039,7 @@ large and needs a dynamic linker.
 | 4a | Code highlighting for `pre`, rich messages and `.md`: the Go port of libprisma, worker goroutine, LRU cache, deadlines, theme colors | decided: regexp2 v1.12.0 |
 | 5 | `.md` viewer: parse, prepare into the same document, a window with scrolling, search and anchors, limits, "Open file" (done) | decided: cmark-gfm in wasm |
 | 6 | Instant View from `cached_page`, and the link previews it opens from (done) | — |
-| 7 | Save a rich message as HTML, as Telegram Desktop's "Save as HTML" (`iv/iv_rich_message_html_export.cpp`): a folder in Downloads with the page and its media, our own CSS (tdesktop's is GPLv3), formulas as SVG from RaTeX's display list; then copying selected blocks as HTML, which needs `text/html` in the clipboard of the Gio fork on every platform | — |
+| 7 | Save a rich message as HTML, as Telegram Desktop's "Save as HTML" (`iv/iv_rich_message_html_export.cpp`): a folder in Downloads with the page and its media, our own CSS (tdesktop's is GPLv3), formulas as SVG from RaTeX's display list; then copying selected blocks as HTML, which needs `text/html` in the clipboard of the Gio fork on every platform (done) | — |
 
 Stages 0–1 need no new library and stop rich messages from showing as empty
 bubbles. The editor, sending, HTML export, translation and AI composing
@@ -1092,7 +1092,7 @@ are not in this plan.
 
 Mentions by ID came with the link handling merged from NaixROOT's fork
 (see below); the rest of stage 0, stages 1 to 6, the drafts bots stream
-and stage 4a are done (below). Saving as HTML (stage 7) remains.
+and stage 4a are done (below), and so is saving as HTML (stage 7).
 
 ### Focused validation
 
@@ -1753,8 +1753,8 @@ it was in `go.mod` already, indirect.
 - **Size:** the stripped messenger grew by 723,968 bytes with stages 1 and
   4a together, 209,457 of them the grammars.
 
-Left: the `.md` viewer and the article engine use the same service when
-they come. A `.` in a pattern matches `\r` in regexp2 and not in Prism.js,
+The article engine, and so the `.md` viewer and Instant View, color code
+with the same service, through the same leaves (checked 2026-10-07). A `.` in a pattern matches `\r` in regexp2 and not in Prism.js,
 so CRLF text may differ; Prism's tests were compared with LF only.
 
 ### Stage 5: the `.md` viewer
@@ -1807,8 +1807,8 @@ so CRLF text may differ; Prism's tests were compared with LF only.
     `ClassifiedLink` allows; anything else is text. A file from a chat has
     no directory, so its relative links go nowhere;
   - images show their description as a link, as Telegram Desktop loads no
-    image of a file; tabs in code are four spaces, as the code fonts have
-    no glyph for one.
+    image of a file; tabs in code are four spaces, as messages now draw
+    them (below).
 - **Viewer** (`ui/markdown_viewer.go`): a document named `.md` or
   `.markdown`, or of type `text/markdown`, up to 4 MB, opens in an
   article window named after the file, with search, zoom, sharing (of the
@@ -1871,6 +1871,71 @@ laying it out (`lineTop`), and a link to it goes there instead of to the
 top of its block. Tests: the line of an anchor in a paragraph of a dozen
 lines, the offsets through `Append` and `Trimmed`, the block's anchor and
 an inline one; each fails with its code removed.
+
+### Stage 7: saving as HTML, copying as HTML
+
+2026-10-07, as Telegram Desktop's `Iv::RichMessageHtmlExport` and
+`SetRichBlocksClipboard`, its behavior and none of its code or CSS:
+
+- **The page** (`internal/messenger/richhtml`): each block as the element
+  HTML has for it (headings, paragraphs, `pre`/`code` with the language,
+  lists with their start, type, values and checkboxes, quotes with their
+  `cite`, tables with spans, alignments and styles, `details`, figures of
+  media, collages as a grid, slideshows scrolled sideways, embeds, posts,
+  channels, maps linking to OpenStreetMap, related articles, buttons), the
+  anchors as ids, those inside a text where they are. Text runs carry
+  their styles as elements; spoilers and media under a spoiler show when
+  pressed, by CSS alone: the page has no script. Links go only to the web,
+  `tg:`, mail, phones and the page's anchors; everything of the message is
+  escaped (`TestPageEscapes`). Our own CSS, light and dark as the reader's
+  system is.
+- **Formulas** are SVG from RaTeX's display list (`ratex.List.SVG`): the
+  KaTeX glyphs as paths, so the page needs no font, in `currentColor`,
+  set on the text's baseline; a letter KaTeX lacks is `<text>`. Telegram
+  Desktop writes PNGs. `formula.Wait` lays one out for it.
+- **Saving** ("Save as HTML", `lng_context_save_html`, in the menu of a
+  rich message that may be forwarded): the whole message
+  (`messages.getRichMessage`, the part when it fails), a folder in the
+  user's downloads (`XDG_DOWNLOAD_DIR`) named after its title, "(2)" and
+  on when taken, the page under the same name, its media in `media/`
+  (streamed when the store can), named after their files or
+  `photo_N.jpg`. Media that cannot be had is "Media unavailable"; a page
+  that cannot be written leaves no folder. Departures: Telegram Desktop
+  offers it only for the one message selected (here also from a
+  message's own menu), lists a large export in its downloads, and its
+  toast links the folder; ours says the page's path.
+- **Copying** (Ctrl+C, "Copy selected"): text selected in an article goes
+  on the clipboard as text and as HTML: the page's blocks from the first
+  to the last it touches, those two cut to the selection when they are a
+  text, as `RichPageBlocksForSelectedSegments` does; hidden spoilers are
+  left out as in the text, media is left out (a clipboard takes no
+  files; Telegram Desktop embeds up to 4 MB of them), formulas laid out
+  are SVG pictures in data URIs. It needed HTML on the clipboard in the
+  Gio fork: X11, Wayland, Windows ("HTML Format") and macOS
+  (`third_party/gio/LOCAL_CHANGES.md`).
+- **Tests**, each failing with its code removed: every block's element,
+  escaping, anchors and spoilers in text, the demo's page well formed; the
+  SVG of a formula; saving the whole message with its media, a second
+  folder, a missing file and a page that cannot be written; file names;
+  the HTML of a selection and the clipboard's write; the clipboard queue's
+  HTML; the offsets of "HTML Format".
+- **Live**, Linux/X11, in the demo: "Save as HTML" on the demo's article
+  wrote the whole message (its wide table and details, which only the
+  whole has) and its photo; Chromium showed it in both themes. A
+  selection from a caption into a table, copied, offered `text/html` in
+  the CLIPBOARD's TARGETS beside the text, with the caption and the whole
+  table. Not checked: Wayland, Windows and macOS.
+
+### Code in messages: tabs and colour
+
+2026-10-07: a tab drew as a missing glyph's box, as the fonts have none;
+it is now a space as wide as four spaces of its font
+(`styledtext.Box`), the tab still in the text, so it selects and copies
+as itself (`TestCodeTabsAreFourSpaces`). Code is in its own colour,
+Telegram Desktop's monoFg (`#4e7391` light; ours `#8fb8d8` dark), inline
+and in blocks where highlighting leaves it plain: in the text's font,
+as for letters the code's font lacks, inline code looked like the rest
+of the text. `CODE_COLORS_PNG_DIR` renders both.
 
 ### Fork work merged into main
 

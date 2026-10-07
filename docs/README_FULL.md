@@ -29,6 +29,7 @@ Two applications built on the same base:
 | `internal/messenger/historycache` | SQLite history, media, viewport and update-state cache |
 | `internal/messenger/chatmedia` | Media loading, bounded rendering cache and playback |
 | `internal/messenger/styledtext` | Rich text rendering and glyph geometry for selection |
+| `internal/messenger/richhtml` | A rich message as an HTML page: "Save as HTML", and the HTML of blocks copied |
 | `internal/messenger/tgstore` | `Store` backed by a Telegram account through gotd               |
 | `internal/messenger/ui`     | Messenger interface; its components: [docs/UI_COMPONENTS.md](docs/UI_COMPONENTS.md) |
 | `internal/kitchen`          | Kitchen app shell, pages and services                             |

@@ -62,6 +62,21 @@ func (t RichText) Trimmed() RichText {
 	if start >= end {
 		return RichText{Anchors: t.Anchors}
 	}
+	return t.slice(start, end)
+}
+
+// Slice is bytes from to to of t's text, from and to at the starts of
+// characters: its entities cut to what is left, its anchors kept, those
+// outside at its ends.
+func (t RichText) Slice(from, to int) RichText {
+	from, to = min(max(from, 0), len(t.Text)), min(max(to, 0), len(t.Text))
+	if from >= to {
+		return RichText{}
+	}
+	return t.slice(from, to)
+}
+
+func (t RichText) slice(start, end int) RichText {
 	lead := UTF16Len(t.Text[:start])
 	length := UTF16Len(t.Text[start:end])
 	out := RichText{Text: t.Text[start:end], Anchors: t.Anchors}

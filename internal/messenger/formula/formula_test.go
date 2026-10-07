@@ -98,3 +98,19 @@ func TestRequest(t *testing.T) {
 		t.Fatal("a formula laid out is not told of at once")
 	}
 }
+
+// Wait returns a formula once it is laid out, and gives up with its
+// context.
+func TestWait(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	r, err := Wait(ctx, `\sqrt{w}`, true)
+	if err != nil || r.List == nil || len(r.List.Items) == 0 {
+		t.Fatalf("%+v, %v", r, err)
+	}
+	done, stop := context.WithCancel(context.Background())
+	stop()
+	if _, err := Wait(done, `\sqrt{never}`, true); err != context.Canceled {
+		t.Fatalf("a context ended: %v", err)
+	}
+}

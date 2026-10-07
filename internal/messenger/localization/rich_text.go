@@ -24,6 +24,11 @@ func init() {
 	TelegramKeys["rich.markdown_cant"] = "lng_markdown_preview_cant"
 	TelegramKeys["rich.open_in_browser"] = "lng_iv_open_in_browser"
 	TelegramKeys["rich.instant_view"] = "lng_view_button_iv"
+	TelegramKeys["rich.save_html"] = "lng_context_save_html"
+	TelegramKeys["rich.html_saved"] = "lng_export_html_saved_to"
+	TelegramKeys["rich.html_failed"] = "lng_export_html_failed"
+	TelegramKeys["rich.html_media_missing"] = "lng_export_html_media_missing"
+	TelegramKeys["rich.html_embed"] = "lng_export_html_embed"
 	for key, texts := range map[string][2]string{
 		"text.copy_code": {"Копировать", "Copy"},
 		"text.copied":    {"Текст скопирован", "Text copied"},
@@ -63,6 +68,13 @@ func init() {
 		"rich.instant_view":    {"Мгновенный просмотр", "Instant View"},
 		"rich.zoom_in":         {"Увеличить", "Zoom in"},
 		"rich.zoom_out":        {"Уменьшить", "Zoom out"},
+		// Saving a rich message as HTML. Telegram Desktop's toast links
+		// its downloads folder; this one says where the page is.
+		"rich.save_html":          {"Сохранить как HTML", "Save as HTML"},
+		"rich.html_saved":         {"Сообщение сохранено: {path}", "Message was saved to {path}"},
+		"rich.html_failed":        {"Не удалось сохранить сообщение как HTML.", "Could not save the message as HTML."},
+		"rich.html_media_missing": {"Медиа недоступно", "Media unavailable"},
+		"rich.html_embed":         {"Встроенное содержимое", "Embedded content"},
 	} {
 		russian[key], english[key] = texts[0], texts[1]
 	}
