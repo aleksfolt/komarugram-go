@@ -16,6 +16,7 @@ import (
 	"gio-mw/token"
 
 	"gioui.org/f32"
+	"gioui.org/io/pointer"
 	"gioui.org/layout"
 	"gioui.org/op"
 	"gioui.org/op/clip"
@@ -180,7 +181,11 @@ func (p *chatPage) mediaTile(gtx layout.Context, r *messageRow, m model.Message,
 		style := surfaceStyle{radius: gtx.Dp(8), background: sc.Surface.OnColor.SetOpacity(0), content: sc.Surface.OnColor, button: l.T("stickers.open")}
 		return r.sticker.Layout(gtx, size, style, draw)
 	}
-	return r.media.Layout(gtx, draw)
+	return r.media.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		// A press opens or plays it, as a button.
+		pointer.CursorPointer.Add(gtx.Ops)
+		return draw(gtx)
+	})
 }
 
 // tileMedia returns the message showing the smallest variant of a photo

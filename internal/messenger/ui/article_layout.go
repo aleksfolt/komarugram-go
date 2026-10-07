@@ -166,6 +166,7 @@ func (p *chatPage) articleLayout(gtx layout.Context, r *messageRow, m model.Mess
 	pointer.CursorText.Add(gtx.Ops)
 	r.text.clicker.Add(gtx.Ops)
 	r.text.dragger.Add(gtx.Ops)
+	entityCursors(gtx, r)
 	area.Pop()
 	p.typed(gtx, r, typing, lines, call, size)
 	return layout.Dimensions{Size: size}

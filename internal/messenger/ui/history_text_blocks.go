@@ -145,6 +145,7 @@ func (p *chatPage) richText(gtx layout.Context, r *messageRow, l localization.Ca
 	pointer.CursorText.Add(gtx.Ops)
 	r.text.clicker.Add(gtx.Ops)
 	r.text.dragger.Add(gtx.Ops)
+	entityCursors(gtx, r)
 	area.Pop()
 	// Controls are registered after the text area, so their presses cannot
 	// start a text selection or activate a link underneath a button.

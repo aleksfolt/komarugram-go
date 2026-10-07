@@ -20,6 +20,7 @@ import (
 
 	"gio-mw/token"
 
+	"gioui.org/io/pointer"
 	"gioui.org/layout"
 	"gioui.org/op/clip"
 	"gioui.org/op/paint"
@@ -177,6 +178,7 @@ func (p *chatPage) fileLayout(gtx layout.Context, r *messageRow, m model.Message
 	// As materialgram draws files: a round button in the primary color,
 	// the name and the size beside it.
 	return r.media.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		pointer.CursorPointer.Add(gtx.Ops)
 		sc := scheme(gtx)
 		return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {

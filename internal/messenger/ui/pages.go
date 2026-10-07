@@ -116,7 +116,10 @@ func layoutChatPageHead(gtx layout.Context, c model.Chat, l localization.Catalog
 	if selection != nil && head == nil {
 		hgtx := gtx
 		hgtx.Constraints = layout.Exact(header)
-		selection.header.Layout(hgtx, func(layout.Context) layout.Dimensions { return layout.Dimensions{Size: header} })
+		selection.header.Layout(hgtx, func(gtx layout.Context) layout.Dimensions {
+			pointer.CursorPointer.Add(gtx.Ops)
+			return layout.Dimensions{Size: header}
+		})
 		if c.Kind != model.KindSaved {
 			layoutAvatarTarget(gtx, &selection.headAvatar)
 		}

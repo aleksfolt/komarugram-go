@@ -14,6 +14,7 @@ import (
 	"gioui.org/gesture"
 	"github.com/go-text/typesetting/segmenter"
 
+	"komarugram/internal/messenger/model"
 	"komarugram/internal/messenger/styledtext"
 
 	"gioui.org/f32"
@@ -547,5 +548,26 @@ func (r *messageRow) moveSelection(e key.Event) {
 	s.caret = caret
 	if !e.Modifiers.Contain(key.ModShift) {
 		s.anchor = caret
+	}
+}
+
+// actsOn reports whether a click on run does something, as textEvents
+// acts on it: a link, an entity's action, an inline button, a spoiler not
+// revealed.
+func (r *messageRow) actsOn(run model.TextRun) bool {
+	return run.URL != "" || run.Action != "" || run.Spoiler && !r.revealed
+}
+
+// entityCursors shows a hand over what a click acts on in r's text, laid
+// out last, as over a button; the rest of the text keeps the text cursor.
+// The areas take no events: the text's own area handles them.
+func entityCursors(gtx layout.Context, r *messageRow) {
+	for _, f := range r.text.fragments {
+		if f.Index < 0 || f.Index >= len(r.runs) || !r.actsOn(r.runs[f.Index]) || f.Bounds.Empty() {
+			continue
+		}
+		area := clip.Rect(f.Bounds).Push(gtx.Ops)
+		pointer.CursorPointer.Add(gtx.Ops)
+		area.Pop()
 	}
 }

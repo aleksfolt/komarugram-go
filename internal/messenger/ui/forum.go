@@ -11,6 +11,7 @@ import (
 	"gio-mw/widget/scroll"
 
 	"gioui.org/f32"
+	"gioui.org/io/pointer"
 	"gioui.org/layout"
 	"gioui.org/op"
 	"gioui.org/op/clip"
@@ -105,7 +106,10 @@ func (a *App) layoutForum(gtx layout.Context, c model.Chat, l localization.Catal
 		return dims
 	}
 	// The header opens the forum's info: the click is taken over it.
-	f.header.Layout(hgtx, func(layout.Context) layout.Dimensions { return layout.Dimensions{Size: header} })
+	f.header.Layout(hgtx, func(gtx layout.Context) layout.Dimensions {
+		pointer.CursorPointer.Add(gtx.Ops)
+		return layout.Dimensions{Size: header}
+	})
 	layoutAvatarTarget(gtx, &f.avatar)
 	if canSearch {
 		f.search.layoutSearchButton(hgtx, header, c.ID, l)

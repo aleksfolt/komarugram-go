@@ -3,6 +3,8 @@
 package ui
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"image"
 	"strings"
@@ -372,4 +374,62 @@ func TestArticleDrawsFormulas(t *testing.T) {
 	if got := h.row.selectedText(); !strings.Contains(got, "E = mc^2") || !strings.Contains(got, `\frac{a}{b}`) {
 		t.Fatalf("selected %q", got)
 	}
+}
+
+// In an article, a link is under a hand too, and its plain text is not.
+func TestArticleEntityCursors(t *testing.T) {
+	page := model.RichPage{Blocks: []model.RichBlock{
+		{Kind: model.RichHeading, Level: 2, Text: richText("Заголовок")},
+		{Kind: model.RichParagraph, Text: model.RichText{Text: "текст ссылка", Entities: []model.Entity{{Kind: "url", Offset: 6, Length: 6, URL: "https://example.com"}}}},
+	}}
+	h := newEntityHarness(t, richMessage(page), model.KindUser)
+	over := func(text string) pointer.Cursor {
+		t.Helper()
+		for _, f := range h.row.text.fragments {
+			if h.row.runs[f.Index].Text == text {
+				c := f.Bounds.Min.Add(f.Bounds.Size().Div(2))
+				h.router.Queue(pointer.Event{Kind: pointer.Move, Source: pointer.Mouse, Position: f32.Pt(float32(c.X), float32(c.Y))})
+				h.frame()
+				return h.router.Cursor()
+			}
+		}
+		t.Fatalf("no fragment says %q", text)
+		return 0
+	}
+	if got := over("ссылка"); got != pointer.CursorPointer {
+		t.Errorf("over the link: %v", got)
+	}
+	if got := over("Заголовок"); got != pointer.CursorText {
+		t.Errorf("over the heading: %v", got)
+	}
+}
+
+// A photo of an article, which a press opens, is under a hand.
+func TestArticleMediaCursor(t *testing.T) {
+	page := model.RichPage{Blocks: []model.RichBlock{
+		{Kind: model.RichMediaBlock, Media: []model.RichMedia{{Kind: model.MessagePhoto, Media: &model.MessageMedia{ID: "photo", Width: 300, Height: 200}}}},
+	}}
+	// The photo does not load: the store has none.
+	store := &entityStore{}
+	h := &entityHarness{t: t, store: store, page: newChatPage(&noMediaStore{store}, func() {}), m: richMessage(page), now: time.Unix(1_790_000_000, 0), l: localization.For("en")}
+	h.page.kind, h.page.chat = model.KindUser, 100
+	h.row = newMessageRow(h.m, h.l, h.now)
+	t.Cleanup(h.page.Close)
+	h.frame()
+	c := h.row.text.size.Div(2)
+	if c.X == 0 || c.Y == 0 {
+		t.Fatalf("the article is %v", h.row.text.size)
+	}
+	h.router.Queue(pointer.Event{Kind: pointer.Move, Source: pointer.Mouse, Position: f32.Pt(float32(c.X), float32(c.Y))})
+	h.frame()
+	if got := h.router.Cursor(); got != pointer.CursorPointer {
+		t.Fatalf("over the photo: %v", got)
+	}
+}
+
+// noMediaStore has no media.
+type noMediaStore struct{ *entityStore }
+
+func (noMediaStore) Media(context.Context, model.Message) ([]byte, error) {
+	return nil, errors.New("no media")
 }
