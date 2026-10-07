@@ -20,6 +20,10 @@ func init() {
 	TelegramKeys["rich.stop_draft"] = "lng_stop_button"
 	TelegramKeys["rich.search"] = "lng_dlg_filter"
 	TelegramKeys["rich.share"] = "lng_iv_share"
+	TelegramKeys["rich.open_file"] = "lng_markdown_preview_open_file"
+	TelegramKeys["rich.markdown_cant"] = "lng_markdown_preview_cant"
+	TelegramKeys["rich.open_in_browser"] = "lng_iv_open_in_browser"
+	TelegramKeys["rich.instant_view"] = "lng_view_button_iv"
 	for key, texts := range map[string][2]string{
 		"text.copy_code": {"Копировать", "Copy"},
 		"text.copied":    {"Текст скопирован", "Text copied"},
@@ -49,10 +53,16 @@ func init() {
 		"rich.back":    {"Назад", "Back"},
 		"rich.forward": {"Вперёд", "Forward"},
 		// Its search, sharing and zoom.
-		"rich.search":   {"Поиск", "Search"},
-		"rich.share":    {"Поделиться", "Share"},
-		"rich.zoom_in":  {"Увеличить", "Zoom in"},
-		"rich.zoom_out": {"Уменьшить", "Zoom out"},
+		"rich.search": {"Поиск", "Search"},
+		"rich.share":  {"Поделиться", "Share"},
+		// The viewer of Markdown files.
+		"rich.open_file":     {"Открыть файл", "Open file"},
+		"rich.markdown_cant": {"Не удалось показать этот файл Markdown", "Can't preview this Markdown file"},
+		// Instant View.
+		"rich.open_in_browser": {"Открыть в браузере", "Open in Browser"},
+		"rich.instant_view":    {"Мгновенный просмотр", "Instant View"},
+		"rich.zoom_in":         {"Увеличить", "Zoom in"},
+		"rich.zoom_out":        {"Уменьшить", "Zoom out"},
 	} {
 		russian[key], english[key] = texts[0], texts[1]
 	}

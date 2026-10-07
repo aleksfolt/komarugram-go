@@ -4,6 +4,7 @@ package ui
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -140,5 +141,37 @@ func TestArticleShowMore(t *testing.T) {
 		if part && (len(opened) != 1 || opened[0].MessageID != 2) || !part && len(opened) != 0 {
 			t.Fatalf("part %v: the button opened %v", part, opened)
 		}
+	}
+}
+
+// An anchor inside a long paragraph is at its line, not at the top of the
+// paragraph.
+func TestInlineAnchorAtItsLine(t *testing.T) {
+	var p model.RichText
+	p.Append(richText(strings.Repeat("word ", 60)))
+	p.AddAnchor("middle")
+	p.Append(richText(strings.Repeat("word ", 60)))
+	page := model.RichPage{Blocks: []model.RichBlock{{Kind: model.RichParagraph, Text: p}}}
+	h := newEntityHarness(t, richMessage(page), model.KindUser)
+	h.frame()
+	y, ok := h.row.articleState.tops["middle"]
+	if !ok || y <= 0 {
+		t.Fatalf("the anchor is at %d (%v)", y, ok)
+	}
+	if want, _ := lineTop(h.row.text.fragments, 300); y != want {
+		t.Fatalf("the anchor is at %d, its line at %d", y, want)
+	}
+}
+
+// An anchor at the end of a paragraph is at its last line.
+func TestInlineAnchorAtTheEnd(t *testing.T) {
+	p := richText(strings.Repeat("word ", 80) + "end")
+	p.AddAnchor("last")
+	page := model.RichPage{Blocks: []model.RichBlock{{Kind: model.RichParagraph, Text: p}}}
+	h := newEntityHarness(t, richMessage(page), model.KindUser)
+	h.frame()
+	last := h.row.text.fragments[len(h.row.text.fragments)-1].Bounds.Min.Y
+	if y := h.row.articleState.tops["last"]; y != last || y == 0 {
+		t.Fatalf("the anchor is at %d, the last line at %d", y, last)
 	}
 }

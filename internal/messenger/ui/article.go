@@ -140,6 +140,9 @@ type articleDoc struct {
 	// the one links go to. details are the details around what is
 	// prepared.
 	anchors map[string][]*articleBlock
+	// inline are the anchors inside a text, at the rune of the article's
+	// text they are before: a link to one goes to its line.
+	inline  map[string]int
 	details []*articleBlock
 	// part is set when Telegram sent the article cut short.
 	part bool
@@ -219,6 +222,16 @@ func (d *articleDoc) leaf(t model.RichText, style flowStyle, extra ...model.Enti
 		d.runes++
 	}
 	b := messageTextBlock{first: len(d.runs), runeStart: d.runes, style: style}
+	for i, name := range t.Anchors {
+		if at := t.AnchorOffset(i); at > 0 && name != "" {
+			if _, ok := d.inline[name]; !ok {
+				if d.inline == nil {
+					d.inline = map[string]int{}
+				}
+				d.inline[name] = d.runes + runesBefore(t.Text, at)
+			}
+		}
+	}
 	for _, r := range runs {
 		d.runes += utf8.RuneCountInString(r.Text)
 	}
@@ -531,4 +544,20 @@ func tablePlaces(rows []articleRow) [][]tablePlace {
 		}
 	}
 	return places
+}
+
+// runesBefore counts the runes of s before UTF-16 offset at.
+func runesBefore(s string, at int) int {
+	n, units := 0, 0
+	for _, r := range s {
+		if units >= at {
+			break
+		}
+		units++
+		if r >= 0x10000 {
+			units++
+		}
+		n++
+	}
+	return n
 }

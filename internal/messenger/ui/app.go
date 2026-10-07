@@ -487,8 +487,10 @@ func New(w *appwindow.Window, store model.Store, services Services) *App {
 			a.openWindow = services.OpenWindow
 			a.viewer.popout = a.openPhotoWindow
 			a.history.openArticle = a.openArticleWindow
+			a.history.openSourceWindow = a.openSourceWindow
 			if a.comments != nil {
 				a.comments.openArticle = a.openArticleWindow
+				a.comments.openSourceWindow = a.openSourceWindow
 			}
 		}
 	}

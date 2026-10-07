@@ -36,6 +36,7 @@ Two applications built on the same base:
 | `pkg/video`                 | ffmpeg-backed player and frame cache, independent of any UI        |
 | `pkg/lottie`                | Lottie/.tgs renderer: tlottie compiled to wasm, run by wazero       |
 | `pkg/ratex`                 | LaTeX formulas: RaTeX compiled to wasm, run by wazero; drawn with KaTeX's fonts |
+| `pkg/cmark`                 | Markdown: cmark-gfm compiled to wasm, run by wazero; `internal/messenger/markdown` makes an article of its tree |
 | `pkg/webm`                  | Matroska/WebM demuxer written in Go                                 |
 | `pkg/vp9`                   | VP9 decoder: libvpx compiled to wasm, run by wazero                 |
 | `pkg/opus`                  | Opus decoder for voice messages: libopus compiled to wasm, OGG parsed in Go, seekable |

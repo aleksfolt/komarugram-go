@@ -101,3 +101,19 @@ func TestRichSummaryBlocks(t *testing.T) {
 		}
 	}
 }
+
+// Anchors keep where they are in a text through Append and Trimmed.
+func TestAnchorOffsets(t *testing.T) {
+	var a RichText
+	a.Append(RichText{Text: "  ab"})
+	a.AddAnchor("x")
+	b := RichText{Text: "cd", Anchors: []string{"old"}}
+	b.AddAnchor("y")
+	a.Append(b)
+	if a.AnchorOffset(0) != 4 || a.AnchorOffset(1) != -1 || a.AnchorOffset(2) != 6 {
+		t.Fatalf("offsets %v of %v", a.AnchorAt, a.Anchors)
+	}
+	if tr := a.Trimmed(); tr.AnchorOffset(0) != 2 || tr.AnchorOffset(2) != 4 {
+		t.Fatalf("trimmed offsets %v", tr.AnchorAt)
+	}
+}

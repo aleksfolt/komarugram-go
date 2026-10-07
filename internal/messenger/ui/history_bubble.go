@@ -375,6 +375,9 @@ func (p *chatPage) bubbleContent(gtx layout.Context, r *messageRow, m model.Mess
 			return label(gtx, text, token.TypestyleBodyMedium, sc.SurfaceVariant.OnColor, 0)
 		}))
 	}
+	if m.WebPage != nil && m.Rich == nil {
+		children = append(children, vspace(6), layout.Rigid(func(gtx layout.Context) layout.Dimensions { return p.webPreview(gtx, r, m, l, animate) }))
+	}
 	if len(m.Reactions) > 0 {
 		children = append(children, vspace(8), layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			return p.reactions(gtx, r, m, animate)

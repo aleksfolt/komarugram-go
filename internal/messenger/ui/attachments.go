@@ -143,6 +143,8 @@ func (p *chatPage) fileLayout(gtx layout.Context, r *messageRow, m model.Message
 	if r.media.Clicked(gtx) {
 		if playing {
 			p.play(gtx, m, p.reportMedia, l)
+		} else if markdownFile(m) {
+			p.openMarkdown(m)
 		} else {
 			p.openAttachment(m)
 		}

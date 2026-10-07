@@ -29,7 +29,17 @@ func (t *RichText) Append(o RichText) {
 		e.Offset += shift
 		t.Entities = append(t.Entities, e)
 	}
-	t.Anchors = append(t.Anchors, o.Anchors...)
+	if len(o.Anchors) > 0 {
+		t.padAnchors()
+		for i, name := range o.Anchors {
+			at := o.AnchorOffset(i)
+			if at >= 0 {
+				at += shift
+			}
+			t.Anchors = append(t.Anchors, name)
+			t.AnchorAt = append(t.AnchorAt, at)
+		}
+	}
 }
 
 // Mark gives the text from offset from, in UTF-16 code units, to its end
@@ -55,6 +65,15 @@ func (t RichText) Trimmed() RichText {
 	lead := UTF16Len(t.Text[:start])
 	length := UTF16Len(t.Text[start:end])
 	out := RichText{Text: t.Text[start:end], Anchors: t.Anchors}
+	if len(t.AnchorAt) > 0 {
+		out.AnchorAt = make([]int, len(t.AnchorAt))
+		for i, at := range t.AnchorAt {
+			if at >= 0 {
+				at = min(max(at-lead, 0), length)
+			}
+			out.AnchorAt[i] = at
+		}
+	}
 	for _, e := range t.Entities {
 		a := max(e.Offset, lead) - lead
 		b := min(e.Offset+e.Length, lead+length) - lead

@@ -168,10 +168,20 @@ func convertMessage(account string, m tg.MessageClass, names map[int64]string) (
 		case *tg.MessageMediaWebPage:
 			if page, ok := media.Webpage.(*tg.WebPage); ok {
 				out.WebPage = &model.WebPreview{URL: page.URL, DisplayURL: page.DisplayURL, Site: page.SiteName, Title: page.Title, Description: page.Description}
+				_, out.WebPage.InstantView = page.GetCachedPage()
 				if photo, ok := page.Photo.(*tg.Photo); ok {
 					meta, thumb := photoMedia(photo)
 					out.WebPage.Photo = meta
 					loc = &fileLocation{ID: photo.ID, Hash: photo.AccessHash, Reference: photo.FileReference, DC: photo.DCID, Photo: true, Thumb: thumb}
+				}
+				// A page's video, as Telegram keeps the video of a YouTube
+				// page, plays as a video message: it is what downloads,
+				// its own thumbnail standing for the photo.
+				if doc, ok := page.Document.(*tg.Document); ok {
+					if kind, meta, ref := documentMedia(doc); kind == model.MessageVideo || kind == model.MessageGIF {
+						out.WebPage.Video, out.WebPage.VideoKind = meta, kind
+						loc = ref
+					}
 				}
 			}
 		case *tg.MessageMediaToDo:

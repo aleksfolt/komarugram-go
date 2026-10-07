@@ -143,8 +143,9 @@ func TestRichMessageConverts(t *testing.T) {
 	if blocks[0].Kind != model.RichHeading || blocks[0].Level != 1 {
 		t.Errorf("title %+v", blocks[0])
 	}
-	if blocks[1].Anchor != "intro" {
-		t.Errorf("paragraph anchor %q", blocks[1].Anchor)
+	// The anchor at the end of the paragraph stays there, at its line.
+	if p := blocks[1]; p.Anchor != "" || len(p.Text.Anchors) != 1 || p.Text.Anchors[0] != "intro" || p.Text.AnchorOffset(0) != model.UTF16Len(p.Text.Text) {
+		t.Errorf("paragraph anchor %q, inline %v at %v", p.Anchor, p.Text.Anchors, p.Text.AnchorAt)
 	}
 	if code := blocks[2]; code.Language != "go" || len(code.Text.Entities) != 0 {
 		t.Errorf("code %+v: a code block keeps no links", code)

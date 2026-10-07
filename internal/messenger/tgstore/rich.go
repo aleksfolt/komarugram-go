@@ -100,12 +100,17 @@ func textBlock(kind string, t model.RichText) model.RichBlock {
 	return b
 }
 
+// adoptAnchor makes the first anchor of t, when it is at its start, the
+// block's; one inside the text stays there, where a link goes to its line.
 func adoptAnchor(anchor *string, t *model.RichText) {
-	if *anchor == "" && len(t.Anchors) > 0 {
+	if *anchor == "" && len(t.Anchors) > 0 && t.AnchorOffset(0) <= 0 {
 		*anchor = t.Anchors[0]
 		t.Anchors = t.Anchors[1:]
+		if len(t.AnchorAt) > 0 {
+			t.AnchorAt = t.AnchorAt[1:]
+		}
 		if len(t.Anchors) == 0 {
-			t.Anchors = nil
+			t.Anchors, t.AnchorAt = nil, nil
 		}
 	}
 }
@@ -285,7 +290,7 @@ func (c *richConverter) appendBlock(out []model.RichBlock, block tg.PageBlockCla
 				rc := model.RichTableCell{Header: cell.Header}
 				if t, ok := cell.GetText(); ok {
 					rc.Text = text(t)
-					rc.Text.Anchors = nil
+					rc.Text.Anchors, rc.Text.AnchorAt = nil, nil
 				}
 				if n, ok := cell.GetColspan(); ok && n > 1 {
 					rc.Colspan = min(n, richSpan)
@@ -354,7 +359,7 @@ func (c *richConverter) appendBlock(out []model.RichBlock, block tg.PageBlockCla
 		}
 		for _, button := range b.Buttons[:min(len(b.Buttons), richButtons)] {
 			label := c.text(button.Text, richNoLinksButDates, depth)
-			label.Anchors = nil
+			label.Anchors, label.AnchorAt = nil, nil
 			style, _ := button.GetStyle()
 			r.Buttons = append(r.Buttons, model.RichButton{Text: label, Button: inlineButton(label.Text, button.Type), Style: richButtonStyle(style)})
 		}
@@ -424,7 +429,7 @@ func (c *richConverter) caption(caption tg.PageCaption, depth int) model.RichTex
 		}
 		out.Append(credit)
 	} else {
-		out.Anchors = append(out.Anchors, credit.Anchors...)
+		out.Append(model.RichText{Anchors: credit.Anchors})
 	}
 	return out
 }
@@ -539,7 +544,7 @@ func (c *richConverter) appendText(out *model.RichText, t tg.RichTextClass, mode
 		out.Mark(from, model.Entity{Kind: "emoji", DocumentID: t.DocumentID})
 	case *tg.TextAnchor:
 		if name := model.AnchorName(t.Name); name != "" {
-			out.Anchors = append(out.Anchors, name)
+			out.AddAnchor(name)
 		}
 		c.appendText(out, t.Text, mode, depth)
 	case *tg.TextDiff:
@@ -659,4 +664,61 @@ func (s *Store) loadRichMessage(ctx context.Context, api *tg.Client, peer peerRe
 		}
 	}
 	return model.RichPage{}, errMessageGone
+}
+
+// InstantView implements model.InstantViewStore: the Instant View of the
+// page at url, through messages.getWebPage, as Telegram Desktop loads it
+// (Iv::Instance::show), its media downloadable as a message's. The cache
+// keeps it, and gives it back when Telegram cannot.
+func (s *Store) InstantView(ctx context.Context, url string) (model.RichPage, error) {
+	c := s.history
+	c.mu.Lock()
+	api, cache := c.api, c.cache
+	c.mu.Unlock()
+	cacheKey := "iv/" + url
+	page, err := s.loadInstantView(ctx, api, url)
+	if err == nil {
+		if cache != nil {
+			_ = cache.Put(ctx, cacheKey, page)
+		}
+		return page, nil
+	}
+	if cache != nil {
+		var kept model.RichPage
+		if ok, e := cache.Get(ctx, cacheKey, &kept); e == nil && ok {
+			return kept, nil
+		}
+	}
+	return model.RichPage{}, err
+}
+
+func (s *Store) loadInstantView(ctx context.Context, api *tg.Client, url string) (model.RichPage, error) {
+	if api == nil {
+		return model.RichPage{}, errNotConnected
+	}
+	res, err := api.MessagesGetWebPage(ctx, &tg.MessagesGetWebPageRequest{URL: url})
+	if err != nil {
+		return model.RichPage{}, err
+	}
+	s.rememberPeers(res.Users, res.Chats)
+	web, ok := res.Webpage.(*tg.WebPage)
+	if !ok {
+		return model.RichPage{}, errMessageGone
+	}
+	cached, ok := web.GetCachedPage()
+	if !ok {
+		return model.RichPage{}, errMessageGone
+	}
+	// The page has what a rich message has: its blocks, and the photos and
+	// documents they show.
+	rich := tg.RichMessage{Rtl: cached.Rtl, Part: cached.Part, Blocks: cached.Blocks, Photos: cached.Photos, Documents: cached.Documents}
+	refs := map[string]fileLocation{}
+	richRefs(rich, refs)
+	c := s.history
+	c.mu.Lock()
+	for id, ref := range refs {
+		c.refs[id] = ref
+	}
+	c.mu.Unlock()
+	return *convertRich(rich), nil
 }

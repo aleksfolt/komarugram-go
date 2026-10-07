@@ -1055,6 +1055,9 @@ func (s *Store) convert(ctx context.Context, raw []tg.MessageClass, live bool, s
 		media := m.Media
 		if media == nil && m.WebPage != nil {
 			media = m.WebPage.Photo
+			if m.WebPage.Video != nil {
+				media = m.WebPage.Video
+			}
 		}
 		if ref != nil && media != nil {
 			if inline := addMediaRefs(refs, media, *ref); inline != nil {

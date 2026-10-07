@@ -54,6 +54,7 @@ The Go modules linked into `messenger` and `kitchen`, as `go version -m` lists t
 | WASI libc and compiler-rt inside the modules above ([wasi-sdk](https://github.com/WebAssembly/wasi-sdk)) | MIT, Apache-2.0 WITH LLVM-exception |
 | `pkg/ratex/ratex.wasm.gz`: [RaTeX](https://github.com/erweixin/RaTeX), its Rust crates and the Rust standard library (built by `pkg/ratex/build`) | MIT; MIT OR Apache-2.0; Unlicense OR MIT; Zlib OR Apache-2.0 OR MIT |
 | `pkg/ratex/fonts`: [KaTeX](https://github.com/KaTeX/KaTeX)'s fonts (`pkg/ratex/fonts/OFL.txt`, `NOTICE`) | SIL OFL 1.1 |
+| `pkg/cmark/cmark.wasm.gz`: [cmark-gfm](https://github.com/desktop-app/cmark-gfm) (desktop-app's fork, built by `pkg/cmark/build`; `pkg/cmark/LICENSE.cmark-gfm`) | BSD-2-Clause, parts MIT |
 | `pkg/prism/grammars.dat.gz`: [Prism.js](https://prismjs.com) 1.29.0's grammars, with `pkg/prism`, a port of [libprisma](https://github.com/desktop-app/libprisma)'s tokenizer (`pkg/prism/LICENSE.prism`) | MIT |
 | `pkg/miniapp/assets/telegram-web-app.js`: Telegram's Mini App SDK | © Telegram, no license stated |
 | `avcdec.wasm`, downloaded at run time: FFmpeg's H.264 decoder ([libavcodec-wasm](https://github.com/komarugif/libavcodec-wasm)) | LGPL-2.1-or-later |

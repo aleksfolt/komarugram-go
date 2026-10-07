@@ -108,3 +108,12 @@ func (s *Store) RichMessage(_ context.Context, key model.MessageKey) (model.Rich
 	}
 	return model.RichPage{}, errors.New("no rich message")
 }
+
+// InstantView implements model.InstantViewStore: every page's view is the
+// demo's article.
+func (s *Store) InstantView(ctx context.Context, url string) (model.RichPage, error) {
+	if err := ctx.Err(); err != nil {
+		return model.RichPage{}, err
+	}
+	return RichExample(false), nil
+}

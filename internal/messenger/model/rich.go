@@ -23,11 +23,36 @@ type RichPage struct {
 
 // RichText is a block's text: plain text with entities, whose offsets and
 // lengths count UTF-16 code units, as a message's do. Anchors are the
-// names inside it that a link to #name goes to, beyond the block's own.
+// names inside it that a link to #name goes to, beyond the block's own;
+// AnchorAt, where in the text each is, in UTF-16 code units, -1 or left
+// out where that is not known, and the link goes to the block's top.
 type RichText struct {
 	Text     string   `json:",omitempty"`
 	Entities []Entity `json:",omitempty"`
 	Anchors  []string `json:",omitempty"`
+	AnchorAt []int    `json:",omitempty"`
+}
+
+// AddAnchor adds the anchor name at the end of t.
+func (t *RichText) AddAnchor(name string) {
+	t.padAnchors()
+	t.Anchors = append(t.Anchors, name)
+	t.AnchorAt = append(t.AnchorAt, UTF16Len(t.Text))
+}
+
+// AnchorOffset is where anchor i of t is, -1 when that is not known.
+func (t RichText) AnchorOffset(i int) int {
+	if i < len(t.AnchorAt) {
+		return t.AnchorAt[i]
+	}
+	return -1
+}
+
+// padAnchors gives every anchor of t an offset, -1 for those without.
+func (t *RichText) padAnchors() {
+	for len(t.AnchorAt) < len(t.Anchors) {
+		t.AnchorAt = append(t.AnchorAt, -1)
+	}
 }
 
 // Rich block kinds, RichBlock.Kind.

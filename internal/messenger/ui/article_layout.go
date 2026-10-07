@@ -18,6 +18,7 @@ import (
 
 	"komarugram/internal/messenger/localization"
 	"komarugram/internal/messenger/model"
+	"komarugram/internal/messenger/styledtext"
 )
 
 // articleState is what a row keeps of its article between frames.
@@ -146,6 +147,15 @@ func (p *chatPage) articleLayout(gtx layout.Context, r *messageRow, m model.Mess
 	macro := op.Record(gtx.Ops)
 	size := a.stack(gtx, doc.blocks, image.Point{})
 	call := macro.Stop()
+	// An anchor inside a text is at its line.
+	for name, at := range doc.inline {
+		if y, ok := lineTop(r.text.fragments, at); ok {
+			if r.articleState.tops == nil {
+				r.articleState.tops = map[string]int{}
+			}
+			r.articleState.tops[name] = y
+		}
+	}
 	if !doc.wide {
 		size.X = min(a.textWidth, size.X)
 	}
@@ -459,4 +469,21 @@ func (p *chatPage) showMore(gtx layout.Context, r *messageRow, m model.Message, 
 		})
 		return layout.Dimensions{Size: size}
 	})
+}
+
+// lineTop is the top of the line of fragments that has rune at, or that
+// ends at it, as an anchor at the end of a text.
+func lineTop(fragments []styledtext.Fragment, at int) (int, bool) {
+	end, ended := 0, false
+	for _, f := range fragments {
+		for _, c := range f.Clusters {
+			if c.Start <= at && at < c.End {
+				return f.Bounds.Min.Y, true
+			}
+			if c.End == at && !ended {
+				end, ended = f.Bounds.Min.Y, true
+			}
+		}
+	}
+	return end, ended
 }

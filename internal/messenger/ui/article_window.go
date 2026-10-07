@@ -46,6 +46,9 @@ type articleWindow struct {
 	// message is the rich message shown: the part, then the whole one.
 	message model.Message
 	// fragment is the anchor to go to once the article that has it is
+	// src is what the article is of, which the bar opens as the system
+	// would: a Markdown file or a page; nothing for a rich message.
+	src articleSource
 	// shown; whole is set once the whole article is, or will not be.
 	fragment string
 	whole    bool
@@ -492,16 +495,29 @@ func (ws *articleWindows) closeAll() {
 // anchor fragment unless it is empty; the window of m, when open, comes to
 // the front.
 func (a *App) openArticleWindow(m model.Message, fragment string) {
-	if a.articleWindows.raise(m.Key, fragment) {
-		return
-	}
-	catalog := a.catalog()
 	title := ""
 	for _, c := range a.store.Chats() {
 		if c.ID == m.Key.ChatID {
 			title = c.Title
 		}
 	}
+	a.openArticleWindowOf(m, fragment, title, articleSource{})
+}
+
+// openSourceWindow shows article, of src, a Markdown file or a page with
+// an Instant View, in a window titled title, whose bar opens src as the
+// system would.
+func (a *App) openSourceWindow(article model.Message, title string, src articleSource) {
+	a.openArticleWindowOf(article, "", title, src)
+}
+
+// openArticleWindowOf shows m in a window titled title, at fragment; src
+// is what m is the article of, if it is not a rich message.
+func (a *App) openArticleWindowOf(m model.Message, fragment, title string, src articleSource) {
+	if a.articleWindows.raise(m.Key, fragment) {
+		return
+	}
+	catalog := a.catalog()
 	source := a.history.source
 	a.openWindow(appwindow.Spec{
 		Options: appwindow.Options{Title: title, Width: unit.Dp(articleWindowWidth + 2*articleWindowMargin + 40), Height: unit.Dp(860), Locale: a.Locale()},
@@ -517,6 +533,7 @@ func (a *App) openArticleWindow(m model.Message, fragment string) {
 				},
 			}
 			window := newArticleWindow(w, source, catalog, host, m, fragment)
+			window.src = src
 			a.articleWindows.add(m.Key, window)
 			return window
 		},

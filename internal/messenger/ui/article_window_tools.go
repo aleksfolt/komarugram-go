@@ -48,7 +48,7 @@ type articleTools struct {
 	zoom                       func() int
 	setZoom                    func(int)
 	zoomOut, zoomIn, zoomReset surface
-	share                      surface
+	share, openFile            surface
 	searchButton               surface
 	search                     articleSearch
 }
@@ -113,6 +113,14 @@ func (a *articleWindow) toolEvents(gtx layout.Context) {
 	}
 	if t.searchButton.Clicked(gtx) {
 		a.openSearch()
+	}
+	if t.openFile.Clicked(gtx) {
+		switch {
+		case a.src.file != nil:
+			a.page.openAttachment(*a.src.file)
+		case a.src.url != "":
+			a.page.askLink(a.src.url)
+		}
 	}
 	for {
 		ev, ok := gtx.Event(
@@ -356,6 +364,12 @@ func (a *articleWindow) layoutTools(gtx layout.Context, bar int, from int, l loc
 		return
 	}
 	button(&t.searchButton, iconSearch, l.T("rich.search"), true)
+	switch {
+	case a.src.file != nil:
+		button(&t.openFile, iconOpenInNew, l.T("rich.open_file"), true)
+	case a.src.url != "":
+		button(&t.openFile, iconOpenInNew, l.T("rich.open_in_browser"), true)
+	}
 	if a.canShare() {
 		button(&t.share, iconShare, l.T("rich.share"), true)
 	}

@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 	"unicode/utf8"
 
@@ -61,6 +62,12 @@ type messageRow struct {
 	comments surface
 	// reply is the quote of the message replied to, which shows it.
 	reply surface
+	// preview is the card of the link preview, and instantView its
+	// Instant View button.
+	preview, instantView surface
+	// previewVideo is the row of the preview's video, which plays as a
+	// video message's does.
+	previewVideo *messageRow
 	// quick takes double clicks on the bubble, which react to it.
 	quick    gesture.Click
 	media    widget.Clickable
@@ -193,6 +200,13 @@ type chatPage struct {
 	// articleHeights are the guesses of how high rich messages' rows
 	// are, until they are laid out.
 	articleHeights map[model.MessageID]articleGuess
+	// sourceBusy is set while the article of a Markdown file or of an
+	// Instant View is made; sourceDone brings it, and openSourceWindow
+	// shows it (markdown_viewer.go, web_preview.go): the article, its
+	// title, and what it is of.
+	sourceBusy       atomic.Bool
+	sourceDone       chan sourceOpened
+	openSourceWindow func(article model.Message, title string, src articleSource)
 	// typing are the carets of drafts bots stream and of the messages
 	// they became, as their text types itself in (typing.go).
 	typing                                     map[model.MessageID]*typing
@@ -428,6 +442,7 @@ func (p *chatPage) save(force bool) {
 // Layout draws the bar of what plays, if anything does, the chat's pinned
 // bar, if it has pinned messages, and its history under them.
 func (p *chatPage) Layout(gtx layout.Context, c model.Chat, l localization.Catalog, animate bool) layout.Dimensions {
+	p.sourceEvents(l)
 	playing := p.audioBarSize(gtx)
 	bar := playing + p.pinnedHeight(gtx, c.ID)
 	if bar == 0 {
@@ -564,7 +579,7 @@ func (p *chatPage) layoutHistory(gtx layout.Context, c model.Chat, l localizatio
 	}
 	p.historyWidth = size.X
 	theme := uint32(sc.Surface.Color.AsNRGBA().R)<<16 | uint32(sc.Surface.Color.AsNRGBA().G)<<8 | uint32(sc.Surface.Color.AsNRGBA().B)
-	env := model.RenderEnvironment{WidthPx: size.X, ScaleMilli: int(gtx.Metric.PxPerDp * 1000), TextScaleMilli: int(gtx.Metric.PxPerSp * 1000), Locale: string(l.Language()), FontRevision: fonts.Revision(), ThemeRevision: theme, RendererRevision: 16}
+	env := model.RenderEnvironment{WidthPx: size.X, ScaleMilli: int(gtx.Metric.PxPerDp * 1000), TextScaleMilli: int(gtx.Metric.PxPerSp * 1000), Locale: string(l.Language()), FontRevision: fonts.Revision(), ThemeRevision: theme, RendererRevision: 17}
 	if p.trace != nil {
 		p.trace.History.Environment = fmt.Sprintf("width:%d dp:%d sp:%d locale:%s font:%d theme:%x renderer:%d", env.WidthPx, env.ScaleMilli, env.TextScaleMilli, env.Locale, env.FontRevision, env.ThemeRevision, env.RendererRevision)
 	}

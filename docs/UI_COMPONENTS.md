@@ -151,6 +151,15 @@ to the text under it. `ARTICLE_PNG_DIR=/tmp/article go test
 article`) draws every kind of block, and a part with its button, narrow
 and wide, in both themes.
 
+A message's link preview is a card under its text (`web_preview.go`),
+in the style of a reply's quote; a page with an Instant View has a
+button under it, as wide, in the style of "Show more". An Instant View
+and a Markdown file (`markdown_viewer.go`) are made into a message with
+a rich page off the frame (`chatPage.openSource`), which
+`sourceEvents` gives to `openSourceWindow`: the article window, whose
+bar has a button that opens the source as the system would
+(`articleSource`).
+
 Formulas (`formulas.go`) are laid out by `internal/messenger/formula`:
 RaTeX (`pkg/ratex`) in a sandbox on a goroutine of its own, as code is
 colored. `chatPage.formula` asks for one and redraws when it comes; until
