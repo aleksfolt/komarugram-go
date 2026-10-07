@@ -24,6 +24,12 @@ type SpanStyle struct {
 	// Shift moves the span down from the top of its line, as a
 	// subscript's: spans of a line are set at its top.
 	Shift unit.Sp
+	// Box, when set, makes the span an object of that size in its line, as
+	// an inline formula, in place of its text: Content is what it stands
+	// for, to select and copy, and Decorate draws it. A line with a box is
+	// set on one baseline: its text, as high as it is, under the boxes'
+	// tops.
+	Box *Box
 
 	idx   int
 	start int
@@ -32,6 +38,13 @@ type SpanStyle struct {
 	// instead of being copied and recounted for every line.
 	shaped string
 	runes  int
+}
+
+// Box is the size of an object in a line of text, and where its baseline
+// is under its top.
+type Box struct {
+	Size   image.Point
+	Ascent int
 }
 
 // spanShape describes the text shaping of a single span.
@@ -43,6 +56,7 @@ type spanShape struct {
 	clusters []Cluster
 	// shift is the span's Shift in pixels.
 	shift int
+	box   bool
 }
 
 // Layout renders the span using the provided text shaping.
@@ -213,6 +227,11 @@ func linePrefix(span SpanStyle, maxWidth, ppem int) (string, int) {
 }
 
 func (t TextStyle) layoutSpan(gtx layout.Context, maxWidth int, span SpanStyle, clusters *[]Cluster) spanResults {
+	if b := span.Box; b != nil {
+		// One cluster of all of Content, as wide and high as the box.
+		*clusters = append(*clusters, Cluster{Bounds: image.Rectangle{Max: b.Size}, Start: span.start, End: span.start + span.runes})
+		return spanResults{width: b.Size.X, height: b.Size.Y, ascent: b.Ascent, runes: span.runes, clusters: (*clusters)[len(*clusters)-1:]}
+	}
 	// One line needs only the start of the span: shaping all the rest of
 	// a long span for each of its lines made wrapping quadratic.
 	mark := len(*clusters)
@@ -324,6 +343,7 @@ func (t TextStyle) Layout(gtx layout.Context, spanFn func(gtx layout.Context, id
 				ascent:   res.ascent,
 				clusters: res.clusters,
 				shift:    shift,
+				box:      span.Box != nil,
 			})
 			// update the dimensions of the current line
 			lineDims.X += res.width
@@ -353,11 +373,38 @@ func (t TextStyle) Layout(gtx layout.Context, spanFn func(gtx layout.Context, id
 					pad = gtx.Constraints.Max.X - lineDims.X
 				}
 			}
+			// A line with a box is set on one baseline; others keep their
+			// spans at the line's top.
+			textAscent, boxAscent, boxed := 0, 0, false
+			for _, shape := range lineShapes {
+				if shape.box {
+					boxed, boxAscent = true, max(boxAscent, shape.ascent)
+				} else {
+					textAscent = max(textAscent, shape.ascent)
+				}
+			}
+			lineAscent = max(textAscent, boxAscent)
+			if boxed {
+				lineDims.Y = 0
+				for _, shape := range lineShapes {
+					top := lineAscent - textAscent + shape.shift
+					if shape.box {
+						top = lineAscent - shape.ascent
+					}
+					lineDims.Y = max(lineDims.Y, top+shape.size.Y)
+				}
+			}
 			lineMacro := op.Record(gtx.Ops)
 			for i, shape := range lineShapes {
 				// lay out this span
 				span = spans[i+lineStartIndex]
 				shape.offset.Y = overallSize.Y + shape.shift
+				if boxed {
+					shape.offset.Y += lineAscent - textAscent
+					if shape.box {
+						shape.offset.Y = overallSize.Y + lineAscent - shape.ascent
+					}
+				}
 				if t.Decorate == nil {
 					span.Layout(gtx, shape)
 				} else {

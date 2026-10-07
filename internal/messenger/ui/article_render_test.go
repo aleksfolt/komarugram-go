@@ -17,6 +17,7 @@ import (
 
 	"gioui.org/layout"
 
+	"komarugram/internal/messenger/formula"
 	"komarugram/internal/messenger/localization"
 	"komarugram/internal/messenger/mockstore"
 	"komarugram/internal/messenger/model"
@@ -72,6 +73,9 @@ func articleFixture() model.RichPage {
 			{Kind: model.RichParagraph, Text: text("Цитата из блоков: абзац")},
 			{Kind: model.RichList, Items: []model.RichListItem{{Text: text("и список в ней")}}},
 		}, Caption: text("Автор")},
+		model.RichBlock{Kind: model.RichMath, Formula: `v = \frac{s}{t},\quad \text{Скорость} = \int_0^\infty e^{-x^2}\,dx`},
+		model.RichBlock{Kind: model.RichMath, Formula: `\sum_{i=1}^{n} i = 1 + 2 + 3 + 4 + 5 + 6 + 7 + 8 + 9 + 10 + 11 + 12 + 13 + 14 + 15 + \cdots + n = \frac{n(n+1)}{2}`},
+		model.RichBlock{Kind: model.RichMath, Formula: `\frac{1}{`},
 		model.RichBlock{Kind: model.RichDivider},
 		model.RichBlock{Kind: model.RichTable, Text: text("Таблица с объединёнными ячейками"), Bordered: true, Striped: true, Rows: []model.RichTableRow{
 			{Cells: []model.RichTableCell{{Header: true, Text: text("Блок")}, {Header: true, Text: text("Этап")}, {Header: true, Text: text("Готово"), Align: "center"}}},
@@ -152,16 +156,33 @@ func TestRenderArticle(t *testing.T) {
 					height = 4200
 				}
 				path := filepath.Join(dir, fmt.Sprintf("article-%s-%d-dark-%t.png", name, width, dark))
-				renderToast(t, path, image.Pt(width, height), dark, func(gtx layout.Context) {
+				draw := func(gtx layout.Context) {
 					p.images.BeginFrame()
 					layout.UniformInset(12).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 						gtx.Constraints.Min = image.Point{}
 						return p.row(gtx, m, false, 0, localization.For("ru"), false)
 					})
 					p.images.EndFrame()
-				})
+				}
+				// The first frame asks for the formulas, which are laid out
+				// off it; the picture is of the frame after.
+				renderToast(t, path, image.Pt(width, height), dark, draw)
+				waitFormulas(t)
+				renderToast(t, path, image.Pt(width, height), dark, draw)
 				p.Close()
 			}
 		}
+	}
+}
+
+// waitFormulas waits for the formulas asked for to be laid out.
+func waitFormulas(t *testing.T) {
+	t.Helper()
+	deadline := time.Now().Add(30 * time.Second)
+	for formula.Pending() > 0 {
+		if time.Now().After(deadline) {
+			t.Fatal("the formulas were not laid out")
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 }

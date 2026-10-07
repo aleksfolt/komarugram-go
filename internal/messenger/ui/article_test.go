@@ -284,3 +284,46 @@ func TestArticleWideTableScrolls(t *testing.T) {
 		t.Fatalf("dragging the thumb moved the first cell from %d to %d", before, after)
 	}
 }
+
+// Formulas are drawn once RaTeX lays them out: one inline in the line as
+// one box of all its source, one of a block in the middle, which selects
+// and copies as its source, and one RaTeX cannot read as its source.
+func TestArticleDrawsFormulas(t *testing.T) {
+	var line model.RichText
+	line.Append(richText("Энергия "))
+	from := model.UTF16Len(line.Text)
+	line.Append(richText("E = mc^2"))
+	line.Mark(from, model.Entity{Kind: "math"})
+	line.Append(richText(" и всё."))
+	page := model.RichPage{Blocks: []model.RichBlock{
+		{Kind: model.RichParagraph, Text: line},
+		{Kind: model.RichMath, Formula: `\frac{a}{b}`},
+		{Kind: model.RichMath, Formula: `\frac{1}{`},
+	}}
+	h := newEntityHarness(t, richMessage(page), model.KindUser)
+	waitFormulas(t)
+	h.frame()
+	clustersOf := func(text string) (int, image.Rectangle) {
+		for _, f := range h.row.text.fragments {
+			if h.row.runs[f.Index].Text == text {
+				return len(f.Clusters), f.Bounds
+			}
+		}
+		t.Fatalf("no fragment says %q", text)
+		return 0, image.Rectangle{}
+	}
+	if n, _ := clustersOf("E = mc^2"); n != 1 {
+		t.Fatalf("the inline formula is %d clusters", n)
+	}
+	n, block := clustersOf(`\frac{a}{b}`)
+	if n != 1 || block.Dx() >= 380 || block.Min.X < 100 {
+		t.Fatalf("the display formula is %d clusters at %v", n, block)
+	}
+	if n, _ := clustersOf(`\frac{1}{`); n < 2 {
+		t.Fatalf("the formula RaTeX cannot read is %d clusters", n)
+	}
+	h.pointerDrag(f32.Pt(2, 2), f32.Pt(float32(h.row.text.size.X-2), float32(h.row.text.size.Y-2)))
+	if got := h.row.selectedText(); !strings.Contains(got, "E = mc^2") || !strings.Contains(got, `\frac{a}{b}`) {
+		t.Fatalf("selected %q", got)
+	}
+}

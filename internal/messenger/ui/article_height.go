@@ -8,6 +8,7 @@ import (
 
 	"gioui.org/unit"
 
+	"komarugram/internal/messenger/formula"
 	"komarugram/internal/messenger/localization"
 	"komarugram/internal/messenger/model"
 )
@@ -68,6 +69,16 @@ func (d *articleDoc) blockHeight(m unit.Metric, b *articleBlock, width int) int 
 	case articleCode:
 		return dp(49) + d.codeLines(m, b.leaf, width-dp(24))*m.Sp(articleCodeLine)
 	case articleMath:
+		// A formula laid out already is as high as it is drawn.
+		if b.leaf >= 0 {
+			if res, ok := formula.Lookup(formula.KeyOf(d.leafText(b.leaf), true)); ok && res.List != nil {
+				em := float32(m.Sp(16)) * displayFormulaScale
+				if formulaFits(res.List, em, 0) {
+					size, _ := res.List.Size(em)
+					return size.Y + dp(12)
+				}
+			}
+		}
 		return dp(12) + d.codeLines(m, b.leaf, width-dp(20))*m.Sp(articleCodeLine)
 	case articleQuote:
 		if b.leaf >= 0 {
@@ -164,6 +175,16 @@ func (d *articleDoc) codeLines(m unit.Metric, leaf, width int) int {
 		return 0
 	}
 	return d.lines(leaf, width, articleCodeLetter*m.PxPerSp)
+}
+
+// leafText is the text of leaf.
+func (d *articleDoc) leafText(leaf int) string {
+	var text strings.Builder
+	b := d.leaves[leaf]
+	for _, r := range d.runs[b.first:b.end] {
+		text.WriteString(r.Text)
+	}
+	return text.String()
 }
 
 // lines guesses how many lines the text of leaf takes width wide, with

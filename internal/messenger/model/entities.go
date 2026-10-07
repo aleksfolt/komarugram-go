@@ -26,6 +26,9 @@ type TextRun struct {
 	// Sub, Sup and Marked are a rich text's subscript, superscript and
 	// marked text.
 	Sub, Sup, Marked bool
+	// Math is a formula's LaTeX source, drawn as the formula once it is
+	// laid out; Code is set too, for its source's font until then.
+	Math bool
 	// Button is the inline button of a rich text the run is the label of,
 	// which a click presses; its Action is "button".
 	Button *MessageButton
@@ -128,8 +131,8 @@ func TextRuns(text string, entities []Entity) []TextRun {
 		}
 		run := TextRun{Text: text[boundary[pos]:boundary[end]], Bold: counts["bold"] > 0,
 			// A formula ("math") shows its source in the code's font until
-			// formulas are drawn.
-			Italic: counts["italic"] > 0, Code: counts["code"] > 0 || counts["pre"] > 0 || counts["math"] > 0,
+			// it is laid out.
+			Italic: counts["italic"] > 0, Code: counts["code"] > 0 || counts["pre"] > 0 || counts["math"] > 0, Math: counts["math"] > 0,
 			Underline: counts["underline"] > 0, Strike: counts["strike"] > 0, Spoiler: counts["spoiler"] > 0,
 			Sub: counts["sub"] > 0, Sup: counts["sup"] > 0, Marked: counts["marked"] > 0}
 		if i := blocks.top(active); i >= 0 {

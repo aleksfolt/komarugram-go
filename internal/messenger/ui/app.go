@@ -29,6 +29,7 @@ import (
 	"komarugram/internal/appwindow"
 	"komarugram/internal/messenger/chatmedia"
 	"komarugram/internal/messenger/emojipacks"
+	"komarugram/internal/messenger/formula"
 	"komarugram/internal/messenger/localization"
 	"komarugram/internal/messenger/login"
 	"komarugram/internal/messenger/model"
@@ -523,6 +524,7 @@ func (a *App) newChatPage(source model.ConversationStore, store model.Store, w *
 	p.openPhoto = func(m model.Message) { a.viewer.Open(p.chat, m, p.photos()) }
 	p.openAlone = func(m model.Message) { a.viewer.OpenAlone(p.chat, m) }
 	p.releaseMemory, p.keepMemory = w.ReleaseMemoryLater, w.KeepMemory
+	formula.SetRelease(w.ReleaseMemoryLater)
 	p.openWebApp = a.launchWebApp
 	if p.composer != nil {
 		p.composer.confirmations = func() (bool, bool) {

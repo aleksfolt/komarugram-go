@@ -340,9 +340,41 @@ func (a *articleDraw) list(gtx layout.Context, b *articleBlock, origin image.Poi
 	return y
 }
 
-// math draws a formula. Until formulas are drawn, it is its source on a
-// plate, as Telegram Desktop shows one it cannot draw.
+// math draws a formula in display style, in the middle, 1.21 times the
+// text's size, as KaTeX sets one; a formula wider than the article scrolls
+// sideways, as a table does. Until it is laid out, and when it cannot be,
+// it is its source on a plate, as Telegram Desktop shows one it cannot
+// draw.
 func (a *articleDraw) math(gtx layout.Context, b *articleBlock, origin image.Point) int {
+	leaf := &a.doc.leaves[b.leaf]
+	ty := wdk.GetMaterialTheme(gtx).Typescale[token.TypestyleBodyLarge]
+	em := float32(gtx.Sp(ty.Size)) * displayFormulaScale
+	if list := a.p.formula(a.r.leafText(leaf), true); list != nil && formulaFits(list, em, 0) {
+		size, _ := list.Size(em)
+		width, pad := gtx.Constraints.Max.X, gtx.Dp(6)
+		scroll := a.r.articleState.tableScroll(b.id)
+		shift := scroll.update(gtx, max(0, size.X-width), width)
+		x := max(0, (width-size.X)/2) - shift
+		at := image.Pt(x, pad)
+		offset(gtx, image.Point{}, func(gtx layout.Context) layout.Dimensions {
+			view := image.Pt(width, size.Y+2*pad)
+			defer clip.Rect{Max: view}.Push(gtx.Ops).Pop()
+			if size.X > width {
+				pass := pointer.PassOp{}.Push(gtx.Ops)
+				scroll.scroll.Add(gtx.Ops)
+				pass.Pop()
+			}
+			a.p.formulaFragment(gtx, a.r, leaf, image.Rectangle{Min: origin.Add(at), Max: origin.Add(at).Add(size)}, at)
+			defer op.Offset(at).Push(gtx.Ops).Pop()
+			drawFormula(gtx, list, em, scheme(gtx).Surface.OnColor.AsNRGBA())
+			return layout.Dimensions{Size: view}
+		})
+		h := size.Y + 2*pad
+		if size.X > width {
+			h += scroll.bar(gtx, h, size.X, width)
+		}
+		return h
+	}
 	return a.plate(gtx, false, func(gtx layout.Context, pad image.Point) int {
 		return offset(gtx, pad, func(gtx layout.Context) layout.Dimensions {
 			gtx.Constraints.Min.X = gtx.Constraints.Max.X

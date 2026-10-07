@@ -20,6 +20,7 @@ import (
 	"komarugram/internal/messenger/preferences"
 	"komarugram/internal/messenger/styledtext"
 	"komarugram/pkg/player"
+	"komarugram/pkg/ratex"
 
 	"gio-mw/token"
 	"gio-mw/wdk"
@@ -938,6 +939,10 @@ func (p *chatPage) textFlow(gtx layout.Context, r *messageRow, block *messageTex
 	styleIndices := make([]int, 0, len(runs))
 	runeStart := block.runeStart
 	frames := make([]image.Image, len(runs))
+	// formulas are the inline formulas laid out, drawn em px to an em in
+	// boxes of their spans.
+	formulas := make([]*ratex.List, len(runs))
+	formulaEm := make([]float32, len(runs))
 	size, fg := ty.Size, scheme(gtx).Surface.OnColor.AsNRGBA()
 	if s := block.style; s.scale != 0 {
 		size = unit.Sp(float32(size) * s.scale)
@@ -972,6 +977,21 @@ func (p *chatPage) textFlow(gtx layout.Context, r *messageRow, block *messageTex
 			frames[i], _ = p.media.Frame(msg, animate)
 			if frames[i] != nil {
 				st.Color.A = 0
+			}
+		}
+		if run.Math {
+			if list := p.formula(run.Text, false); list != nil {
+				// A formula wider than the line is set smaller, down to
+				// half; past that it stays its source.
+				em := float32(gtx.Sp(st.Size))
+				if w, _ := list.Size(em); w.X > gtx.Constraints.Max.X {
+					em *= float32(gtx.Constraints.Max.X) / float32(w.X)
+				}
+				if em >= float32(gtx.Sp(st.Size))/2 && formulaFits(list, em, gtx.Constraints.Max.X) {
+					box, baseline := list.Size(em)
+					st.Box = &styledtext.Box{Size: box, Ascent: baseline}
+					formulas[i], formulaEm[i] = list, em
+				}
 			}
 		}
 		if i == 0 && block.trimStart {
@@ -1044,6 +1064,9 @@ func (p *chatPage) textFlow(gtx layout.Context, r *messageRow, block *messageTex
 			draw()
 			if frames[i] != nil {
 				drawImage(gtx, p.images, frames[i], size)
+			}
+			if formulas[i] != nil {
+				drawFormula(gtx, formulas[i], formulaEm[i], styles[i].Color)
 			}
 			if run.Underline || run.Strike || run.URL != "" || run.Action != "" {
 				y := size.Y - 1
